@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +11,7 @@ import 'package:jangjak_diary/relationships/connection_sheet.dart';
 import 'package:jangjak_diary/relationships/force_layout.dart';
 import 'package:jangjak_diary/relationships/relationship_data.dart';
 import 'package:jangjak_diary/relationships/relationship_screen.dart';
+import 'package:jangjak_diary/relationships/relation_api.dart';
 import 'package:jangjak_diary/theme/diary_theme.dart';
 
 void main() {
@@ -127,10 +133,43 @@ void main() {
         home: RelationshipScreen(
           interests: interests ?? pair,
           clock: () => now,
+          api: RelationApi(
+            baseUrl: 'http://test.local',
+            client: MockClient(
+              (_) async => http.Response(
+                jsonEncode({
+                  'relations':
+                      (interests ?? pair).any((item) => item.id == 'books')
+                      ? [
+                          {
+                            'source': 'books',
+                            'target': 'guitar',
+                            'score': 0.66,
+                            'type': 'motivation',
+                            'summary': '위로를 표현하는 즐거움이 공통됩니다.',
+                            'evidence': pair
+                                .map((item) => item.entries.first.text)
+                                .toList(),
+                            'suggestion': '책의 한 문장을 멜로디로 표현해보세요.',
+                          },
+                        ]
+                      : [],
+                }),
+                200,
+                headers: const {
+                  'content-type': 'application/json; charset=utf-8',
+                },
+              ),
+            ),
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
+    if ((interests ?? pair).any((item) => item.id == 'books')) {
+      await tester.tap(find.text('관계 분석하기'));
+      await tester.pumpAndSettle();
+    }
   }
 
   testWidgets('touching a line opens its reason and original evidence', (
@@ -149,7 +188,10 @@ void main() {
     expect(find.text('근거 기록'), findsOneWidget);
     expect(find.text('책 속 이야기의 리듬에서 위로를 받았다.'), findsOneWidget);
     expect(find.text('멜로디의 리듬과 가사로 위로를 표현했다.'), findsOneWidget);
-    expect(find.text('새로운 연결 제안'), findsOneWidget);
+    expect(find.text('함께 해볼 행동'), findsOneWidget);
+    expect(find.text('위로를 표현하는 즐거움이 공통됩니다.'), findsOneWidget);
+    expect(find.text('밀접도 0.66'), findsOneWidget);
+    expect(find.text('책의 한 문장을 멜로디로 표현해보세요.'), findsOneWidget);
     await tester.tap(find.byTooltip('닫기'));
     await tester.pumpAndSettle();
     expect(find.byType(ConnectionSheet), findsNothing);
@@ -183,7 +225,7 @@ void main() {
         interests: [fire('mine', '', title: '내 관심사 하나')],
         size: const Size(320, 568),
       );
-      expect(find.text('아직 발견된 연결이 없어요'), findsOneWidget);
+      expect(find.text('아직 관계를 분석하지 않았어요'), findsOneWidget);
       await tester.tap(find.text('예시 관계도'));
       await tester.pumpAndSettle();
       expect(

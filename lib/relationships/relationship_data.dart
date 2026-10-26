@@ -1,5 +1,15 @@
 import '../diary/diary_store.dart';
 
+enum RelationType {
+  topic('공통 주제'),
+  motivation('공통 동기'),
+  behavior('비슷한 행동'),
+  transition('관심의 전이');
+
+  const RelationType(this.label);
+  final String label;
+}
+
 class ConnectionEvidence {
   const ConnectionEvidence(this.interest, this.entry);
   final Interest interest;
@@ -13,23 +23,31 @@ class InterestConnection {
     required this.strength,
     required this.themes,
     required this.evidence,
+    this.type,
+    this.summary,
+    this.suggestion,
   });
   final Interest left;
   final Interest right;
   final double strength;
   final List<String> themes;
   final List<ConnectionEvidence> evidence;
+  final RelationType? type;
+  final String? summary;
+  final String? suggestion;
   String get id => '${left.id}::${right.id}';
   bool contains(String id) => left.id == id || right.id == id;
-  String get label => '${left.title} · ${right.title}';
+  String get label =>
+      '${left.title}${type == RelationType.transition ? ' → ' : ' · '}${right.title}';
   String get closeness => strength >= .75
       ? '깊은 연결'
       : strength >= .6
       ? '가까운 연결'
       : '작은 연결';
   String get explanation =>
+      summary ??
       '두 관심사의 기록에서 ${themes.map((theme) => '‘$theme’').join(', ')}에 관한 표현이 함께 발견됐어요. '
-      '서로 다른 활동 속에 비슷한 마음이 머물러 있을 수 있어요.';
+          '서로 다른 활동 속에 비슷한 마음이 머물러 있을 수 있어요.';
 }
 
 class RelationshipMap {

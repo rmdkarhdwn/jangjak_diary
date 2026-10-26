@@ -8,15 +8,18 @@ import '../theme/diary_theme.dart';
 import 'connection_sheet.dart';
 import 'relationship_data.dart';
 import 'relationship_graph.dart';
+import 'relation_api.dart';
 
 class RelationshipScreen extends StatefulWidget {
   const RelationshipScreen({
     super.key,
     required this.interests,
     required this.clock,
+    this.api,
   });
   final List<Interest> interests;
   final DateTime Function() clock;
+  final RelationApi? api;
 
   @override
   State<RelationshipScreen> createState() => _RelationshipScreenState();
@@ -25,7 +28,14 @@ class RelationshipScreen extends StatefulWidget {
 class _RelationshipScreenState extends State<RelationshipScreen>
     with WidgetsBindingObserver {
   final _graph = GlobalKey<RelationshipGraphState>();
-  late final _mine = RecordRelationshipAnalyzer().analyze(widget.interests);
+  late RelationshipMap _mine = RelationshipMap(
+    interests: widget.interests,
+    connections: const [],
+  );
+  late final _api = widget.api ?? RelationApi();
+  bool _loading = false;
+  bool _analyzed = false;
+  RelationApiException? _error;
   late final _example = exampleRelationshipMap(widget.clock());
   late DateTime _now = widget.clock();
   bool _showExample = false;
@@ -51,10 +61,121 @@ class _RelationshipScreenState extends State<RelationshipScreen>
 
   @override
   void dispose() {
+    if (widget.api == null) _api.close();
     _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+
+  Future<void> _analyze() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _analyzed = false;
+      _error = null;
+      _selectedId = null;
+      _mine = RelationshipMap(
+        interests: widget.interests,
+        connections: const [],
+      );
+    });
+    try {
+      final result = await _api.analyze(widget.interests);
+      if (mounted) {
+        setState(() {
+          _mine = result;
+          _analyzed = true;
+        });
+      }
+    } on RelationApiException catch (error) {
+      if (mounted) setState(() => _error = error);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = const RelationApiException(
+            'UNEXPECTED',
+            '관계 분석을 마치지 못했어요. 다시 시도해 주세요.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Widget _analysisPanel() => Padding(
+    padding: const EdgeInsets.fromLTRB(28, 8, 28, 4),
+    child: Row(
+      children: [
+        if (_loading) ...[
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFFE3BD95),
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+        Expanded(
+          child: Semantics(
+            liveRegion: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _loading
+                      ? '관계를 분석하고 있어요…'
+                      : _error != null
+                      ? '관계 분석에 실패했어요'
+                      : _analyzed
+                      ? '관계 분석을 마쳤어요'
+                      : '기록으로 불 사이의 관계를 찾아봐요.',
+                  style: const TextStyle(color: DiaryTheme.cream, fontSize: 11),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _error != null
+                      ? '${_error!.message} (${_error!.code})'
+                      : _loading
+                      ? '잠시만 기다려 주세요. 최대 55초 정도 걸릴 수 있어요.'
+                      : _analyzed && _mine.connections.isEmpty
+                      ? '이번 분석에서는 충분한 근거가 있는 연결을 찾지 못했어요.'
+                      : '분석을 누르면 최근 장작 원문을 AI 분석 서버로 보내요. 관심사별 최대 30개, 관심사 최대 12개예요.',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFB9ADBD),
+                    fontSize: 10,
+                    height: 1.6,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: _loading ? null : _analyze,
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFFE3BD95),
+            disabledForegroundColor: const Color(0xFF8F879D),
+          ),
+          child: Text(
+            _loading
+                ? '분석 중'
+                : _error != null
+                ? '다시 시도'
+                : _analyzed
+                ? '다시 분석'
+                : '관계 분석하기',
+            style: const TextStyle(fontSize: 11),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _openConnection(InterestConnection connection) async {
     final id = await showModalBottomSheet<String>(
@@ -195,6 +316,7 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                           ],
                         ),
                       ),
+                      if (!_showExample) _analysisPanel(),
                       Expanded(
                         child: Stack(
                           children: [
@@ -262,7 +384,7 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                         child: Text(
                           _showExample
                               ? '예시 관심사와 기록으로 둘러보는 중이에요.'
-                              : 'AI 연결 전 · 기록의 공통 표현으로 살펴보는 관계예요.',
+                              : 'AI가 기록을 바탕으로 제안한 관계이며, 확정적인 판단은 아니에요.',
                           style: const TextStyle(
                             color: Color(0xFF8F879D),
                             fontSize: 10,
@@ -310,7 +432,13 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        _map.connections.isEmpty
+                        !_showExample && _loading
+                            ? '분석 결과를 기다리고 있어요'
+                            : !_showExample && _error != null
+                            ? '분석 결과를 불러오지 못했어요'
+                            : !_showExample && !_analyzed
+                            ? '아직 관계를 분석하지 않았어요'
+                            : _map.connections.isEmpty
                             ? '아직 발견된 연결이 없어요'
                             : '서로 닿아 있는 마음을 찾아보세요',
                         style: const TextStyle(
@@ -324,7 +452,7 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                 const SizedBox(height: 6),
                 Text(
                   _map.connections.isEmpty
-                      ? '기록이 쌓이면 공통점을 찾아요. 예시 관계도로 먼저 둘러보세요.'
+                      ? '각 불의 기록을 더 남기거나 예시 관계도를 둘러볼 수 있어요.'
                       : '불을 누르면 가까운 관계가, 선을 누르면 연결의 이유가 보여요.',
                   style: const TextStyle(
                     color: Color(0xFFB9ADBD),

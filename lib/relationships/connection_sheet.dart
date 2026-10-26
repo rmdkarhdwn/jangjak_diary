@@ -89,7 +89,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      widget.map.isExample ? '예시 기록에서 찾은 연결' : '기록에서 찾은 연결',
+                      widget.map.isExample ? '예시 기록에서 찾은 연결' : 'AI가 기록에서 찾은 연결',
                       style: const TextStyle(color: soft, fontSize: 11),
                     ),
                   ),
@@ -112,8 +112,10 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _NamePill(_current.left.title),
-                  const Icon(
-                    Icons.more_horiz_rounded,
+                  Icon(
+                    _current.type == RelationType.transition
+                        ? Icons.arrow_forward_rounded
+                        : Icons.more_horiz_rounded,
                     color: Color(0xFFE3B98F),
                     size: 20,
                   ),
@@ -130,7 +132,9 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _current.closeness,
+                    _current.type == null
+                        ? _current.closeness
+                        : '밀접도 ${_current.strength}',
                     style: const TextStyle(
                       color: Color(0xFFE3B98F),
                       fontSize: 11,
@@ -264,12 +268,16 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                   ),
                 ),
               const SizedBox(height: 20),
-              const _SectionTitle('새로운 연결 제안', icon: Icons.add_link_rounded),
+              _SectionTitle(
+                _current.suggestion == null ? '새로운 연결 제안' : '함께 해볼 행동',
+                icon: Icons.add_link_rounded,
+              ),
               const SizedBox(height: 8),
               Text(
-                suggestions.isEmpty
-                    ? '새로운 공통점이 담긴 기록이 쌓이면, 다른 연결도 함께 살펴볼 수 있어요.'
-                    : '이 두 불에서 조금 더 뻗어 나가 볼까요? 아직 펼치지 않은 공통점이에요.',
+                _current.suggestion ??
+                    (suggestions.isEmpty
+                        ? '새로운 공통점이 담긴 기록이 쌓이면, 다른 연결도 함께 살펴볼 수 있어요.'
+                        : '이 두 불에서 조금 더 뻗어 나가 볼까요? 아직 펼치지 않은 공통점이에요.'),
                 style: const TextStyle(color: soft, fontSize: 11, height: 1.8),
               ),
               const SizedBox(height: 12),
@@ -332,7 +340,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
               Text(
                 widget.map.isExample
                     ? '이 화면의 관심사와 기록은 기능을 살펴보기 위한 예시입니다.'
-                    : 'AI 연결 전 미리보기예요. 기록에 나타난 공통 표현을 기준으로 연결하며, 관계를 단정하지 않아요.',
+                    : 'AI가 장작 원문을 바탕으로 제안한 연결이에요. 밀접도는 서버의 계산값이며 확률이나 확정적인 판단이 아니에요.',
                 style: TextStyle(
                   color: soft.withValues(alpha: .65),
                   fontSize: 10,
