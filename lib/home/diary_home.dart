@@ -10,6 +10,7 @@ import '../theme/diary_theme.dart';
 import 'diary_sheets.dart';
 import 'home_widgets.dart';
 import 'animated_fireplace.dart';
+import 'category_overview.dart';
 
 class DiaryHome extends StatefulWidget {
   const DiaryHome({super.key, required this.store});
@@ -25,6 +26,9 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
   int _selected = 1;
   late DateTime _now;
   Timer? _clockTimer;
+  bool _overviewOpen = false;
+  double _verticalTravel = 0;
+  double _wheelTravel = 0;
   bool _appActive = true;
   PageController _pager = PageController(
     initialPage: 1,
@@ -40,7 +44,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     _now = widget.store.now;
     WidgetsBinding.instance.addObserver(this);
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (_appActive) _refreshClock();
+      if (_appActive && !_overviewOpen) _refreshClock();
     });
     _load();
   }
@@ -173,6 +177,67 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     duration: const Duration(milliseconds: 350),
     curve: Curves.easeOutCubic,
   );
+
+  Future<void> _showCategories() async {
+    if (_overviewOpen || _interests == null) return;
+    setState(() => _overviewOpen = true);
+    String? result;
+    try {
+      result = await Navigator.of(context).push<String>(
+        PageRouteBuilder(
+          transitionDuration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 420),
+          reverseTransitionDuration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 320),
+          pageBuilder: (_, animation, secondaryAnimation) => CategoryOverview(
+            interests: _interests!,
+            selectedId: _current?.id,
+            clock: () => widget.store.now,
+          ),
+          transitionsBuilder: (_, animation, secondaryAnimation, child) =>
+              SlideTransition(
+                position: Tween(begin: const Offset(0, 1), end: Offset.zero)
+                    .animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                        reverseCurve: Curves.easeInCubic,
+                      ),
+                    ),
+                child: child,
+              ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _overviewOpen = false;
+          _now = widget.store.now;
+        });
+      }
+    }
+    if (!mounted) return;
+    if (result == CategoryOverview.createNew) {
+      await _newFire();
+      return;
+    }
+    final index = result == null
+        ? _selected
+        : _interests!.indexWhere((item) => item.id == result);
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted && _pager.hasClients && index >= 0) await _goTo(index);
+  }
+
+  void _handleWheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || _overviewOpen) return;
+    _wheelTravel = (_wheelTravel + event.scrollDelta.dy).clamp(0, 100);
+    if (_wheelTravel >= 24) {
+      _wheelTravel = 0;
+      _showCategories();
+    }
+  }
 
   Widget _header(double scale) => Padding(
     padding: EdgeInsets.symmetric(horizontal: 28 * scale),
@@ -363,7 +428,9 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
                                         level: interest.levelAt(_now),
                                         scale: scale,
                                         animate:
-                                            index == _selected && _appActive,
+                                            index == _selected &&
+                                            !_overviewOpen &&
+                                            _appActive,
                                       ),
                               ),
                             ),
@@ -387,60 +454,85 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     final padding = MediaQuery.paddingOf(context);
     final top = math.max((compact ? 16 : 72) * scale, padding.top + 12);
     final bottom = math.max(8 * scale, padding.bottom + 8);
-    return Column(
-      children: [
-        SizedBox(height: top),
-        _header(scale),
-        SizedBox(height: (compact ? 14 : 45) * scale),
-        _heading(scale, compact: compact),
-        SizedBox(height: (compact ? 8 : 27) * scale),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (_, space) {
-              final artScale = math.min(scale, space.maxHeight / 344);
-              return Center(child: _carousel(artScale));
-            },
-          ),
-        ),
-        InterestIndicator(
-          count: _interests!.length + 1,
-          selected: _selected,
-          scale: scale,
-          onSelected: _goTo,
-        ),
-        SizedBox(height: (compact ? 6 : 12) * scale),
-        if (!compact) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              _isNewFire ? '나만의 작은 불을 하나 더 피워보세요.' : '오늘은 어떤 마음을 더해볼까요?',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: DiaryTheme.cream.withValues(alpha: .76),
-                fontSize: 12 * scale,
-                height: 20 / 12,
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerSignal: _handleWheel,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragStart: (_) => _verticalTravel = 0,
+        onVerticalDragUpdate: (event) => _verticalTravel += event.delta.dy,
+        onVerticalDragEnd: (event) {
+          if (_verticalTravel < -64 || (event.primaryVelocity ?? 0) < -400) {
+            _showCategories();
+          }
+        },
+        child: Column(
+          children: [
+            SizedBox(height: top),
+            _header(scale),
+            SizedBox(height: (compact ? 14 : 45) * scale),
+            _heading(scale, compact: compact),
+            SizedBox(height: (compact ? 8 : 27) * scale),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (_, space) {
+                  final artScale = math.min(scale, space.maxHeight / 344);
+                  return Center(child: _carousel(artScale));
+                },
               ),
             ),
-          ),
-          SizedBox(height: 10 * scale),
-        ],
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            HomeAction(
-              label: _isNewFire ? '불 피우기' : '장작 넣기',
-              onTap: _addEntry,
-              primary: true,
+            InterestIndicator(
+              count: _interests!.length + 1,
+              selected: _selected,
               scale: scale,
+              onSelected: _goTo,
             ),
-            if (!_isNewFire) ...[
-              SizedBox(width: 28 * scale),
-              HomeAction(label: '기록 보기', onTap: _history, scale: scale),
+            SizedBox(height: (compact ? 6 : 12) * scale),
+            if (!compact) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  _isNewFire ? '나만의 작은 불을 하나 더 피워보세요.' : '오늘은 어떤 마음을 더해볼까요?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: DiaryTheme.cream.withValues(alpha: .76),
+                    fontSize: 12 * scale,
+                    height: 20 / 12,
+                  ),
+                ),
+              ),
+              SizedBox(height: 10 * scale),
             ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                HomeAction(
+                  label: _isNewFire ? '불 피우기' : '장작 넣기',
+                  onTap: _addEntry,
+                  primary: true,
+                  scale: scale,
+                ),
+                if (!_isNewFire) ...[
+                  SizedBox(width: 28 * scale),
+                  HomeAction(label: '기록 보기', onTap: _history, scale: scale),
+                ],
+              ],
+            ),
+            SizedBox(height: 4 * scale),
+            TextButton.icon(
+              onPressed: _showCategories,
+              style: TextButton.styleFrom(
+                foregroundColor: DiaryTheme.cream.withValues(alpha: .65),
+                minimumSize: const Size(0, 44),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+              label: const Text('전체 분류 보기', style: TextStyle(fontSize: 11)),
+            ),
+            SizedBox(height: bottom),
           ],
         ),
-        SizedBox(height: bottom),
-      ],
+      ),
     );
   }
 

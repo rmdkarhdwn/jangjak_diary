@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jangjak_diary/main.dart';
@@ -166,5 +167,215 @@ void main() {
     await tester.tap(find.text('장작 넣기'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets(
+    'scrolling down opens a separate category page including empty interests',
+    (tester) async {
+      String? saved;
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+      );
+      final interests = [...await store.load()];
+      interests[0] = interests[0].withEntry(
+        DiaryEntry(text: '책에서 마음에 드는 문장을 찾았어요.', createdAt: DateTime.now()),
+      );
+      await store.save(interests);
+      await openDiary(tester, store: store);
+      await tester.drag(
+        find.byKey(const Key('interest-carousel')),
+        const Offset(0, -420),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsOneWidget);
+      expect(find.text('책 읽기'), findsOneWidget);
+      expect(find.text('달리기'), findsOneWidget);
+      expect(find.byKey(const Key('interest-carousel')), findsNothing);
+      await tester.tap(find.text('책 읽기'));
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsNothing);
+      expect(find.text('책 읽기'), findsOneWidget);
+      expect(find.byType(EntryHistory), findsNothing);
+      await tester.tap(find.text('기록 보기'));
+      await tester.pumpAndSettle();
+      expect(find.text('책 읽기의 기록'), findsOneWidget);
+      expect(find.text('책에서 마음에 드는 문장을 찾았어요.'), findsOneWidget);
+    },
+  );
+
+  testWidgets('the category page has a way back to the same selected fire', (
+    tester,
+  ) async {
+    await openDiary(tester);
+    await tester.drag(
+      find.byKey(const Key('interest-carousel')),
+      const Offset(0, -420),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('전체 분류'), findsOneWidget);
+    await tester.tap(find.byTooltip('내 불로 돌아가기'));
+    await tester.pumpAndSettle();
+    expect(find.text('기타 치기'), findsOneWidget);
+    expect(find.byKey(const Key('interest-carousel')), findsOneWidget);
+  });
+
+  testWidgets(
+    'pulling down from the top of categories returns to the same fire',
+    (tester) async {
+      await openDiary(tester);
+      await tester.tap(find.text('전체 분류 보기'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('전체 분류'), const Offset(0, 20));
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsOneWidget);
+      await tester.drag(find.text('전체 분류'), const Offset(150, 10));
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsOneWidget);
+      await tester.drag(find.text('전체 분류'), const Offset(0, 180));
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsNothing);
+      expect(find.text('기타 치기'), findsOneWidget);
+      expect(find.byKey(const Key('interest-carousel')), findsOneWidget);
+    },
+  );
+
+  testWidgets('scrolling upward at the category top returns to the fire', (
+    tester,
+  ) async {
+    await openDiary(tester);
+    await tester.tap(find.text('전체 분류 보기'));
+    await tester.pumpAndSettle();
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(find.text('전체 분류')),
+        scrollDelta: const Offset(0, -80),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('전체 분류'), findsNothing);
+    expect(find.text('기타 치기'), findsOneWidget);
+  });
+
+  testWidgets(
+    'scrolling a long category list back to its top does not dismiss it',
+    (tester) async {
+      String? saved;
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+      );
+      await store.save([
+        for (var i = 0; i < 15; i++)
+          Interest(
+            id: 'interest-$i',
+            title: '관심사 $i',
+            heatUpdatedAt: DateTime.now(),
+          ),
+      ]);
+      await openDiary(tester, store: store);
+      await tester.tap(find.text('전체 분류 보기'));
+      await tester.pumpAndSettle();
+      final page = find.byKey(const Key('category-page'));
+      await tester.drag(page, const Offset(0, -600));
+      await tester.pumpAndSettle();
+      await tester.drag(page, const Offset(0, 250));
+      await tester.pumpAndSettle();
+      expect(page, findsOneWidget);
+      await tester.drag(page, const Offset(0, 3000));
+      await tester.pumpAndSettle();
+      expect(page, findsOneWidget);
+      expect(find.text('전체 분류').hitTestable(), findsOneWidget);
+      await tester.drag(find.text('전체 분류'), const Offset(0, 160));
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(find.text('관심사 1'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'wheel scrolling opens one category page without changing fires',
+    (tester) async {
+      await openDiary(tester);
+      final position = tester.getCenter(
+        find.byKey(const Key('interest-carousel')),
+      );
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: position,
+          scrollDelta: const Offset(40, 0),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsNothing);
+      for (var i = 0; i < 2; i++) {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: position,
+            scrollDelta: const Offset(0, 80),
+          ),
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsOneWidget);
+      await tester.tap(find.byTooltip('내 불로 돌아가기'));
+      await tester.pumpAndSettle();
+      expect(find.text('기타 치기'), findsOneWidget);
+      expect(find.text('전체 분류'), findsNothing);
+    },
+  );
+
+  testWidgets('a long category grid scrolls and selects a distant fire', (
+    tester,
+  ) async {
+    String? saved;
+    final store = DiaryStore(
+      read: () async => saved,
+      write: (value) async => saved = value,
+    );
+    await store.save([
+      for (var i = 0; i < 15; i++)
+        Interest(
+          id: 'interest-$i',
+          title: '관심사 $i',
+          heatUpdatedAt: DateTime.now(),
+        ),
+    ]);
+    await openDiary(tester, store: store);
+    tester.view.physicalSize = const Size(320, 568);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('전체 분류 보기'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('관심사 14'),
+      350,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('category-page')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.text('관심사 14'));
+    await tester.pumpAndSettle();
+    expect(find.text('관심사 14'), findsOneWidget);
+    expect(find.text('전체 분류'), findsNothing);
+  });
+
+  testWidgets('a category can be created from the overview and reopened', (
+    tester,
+  ) async {
+    await openDiary(tester);
+    await tester.tap(find.text('전체 분류 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('새 불 피우기'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '그림 그리기');
+    await tester.pump();
+    await tester.tap(find.text('불 피우기'));
+    await tester.pumpAndSettle();
+    expect(find.text('그림 그리기'), findsOneWidget);
+    await tester.tap(find.text('전체 분류 보기'));
+    await tester.pumpAndSettle();
+    expect(find.text('그림 그리기'), findsOneWidget);
+    expect(find.text('4개의 불'), findsOneWidget);
   });
 }

@@ -175,21 +175,24 @@ class InterestIndicator extends StatelessWidget {
                   height: 16 * scale,
                 )
               else
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    count,
-                    (index) => Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4 * scale),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: (selected == index ? 14 : 4) * scale,
-                        height: 4 * scale,
-                        decoration: BoxDecoration(
-                          color: DiaryTheme.cream.withValues(
-                            alpha: selected == index ? 1 : .8,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(
+                      count,
+                      (index) => Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4 * scale),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: (selected == index ? 14 : 4) * scale,
+                          height: 4 * scale,
+                          decoration: BoxDecoration(
+                            color: DiaryTheme.cream.withValues(
+                              alpha: selected == index ? 1 : .8,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
                           ),
-                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
