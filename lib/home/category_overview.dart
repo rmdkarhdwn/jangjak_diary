@@ -9,6 +9,7 @@ import '../diary/diary_store.dart';
 import '../theme/diary_theme.dart';
 import 'animated_fireplace.dart';
 import 'home_widgets.dart';
+import 'archived_fire_sheet.dart';
 
 class CategoryOverview extends StatefulWidget {
   const CategoryOverview({
@@ -16,12 +17,16 @@ class CategoryOverview extends StatefulWidget {
     required this.interests,
     required this.selectedId,
     required this.clock,
+    required this.onManage,
+    required this.onRekindle,
   });
 
   static const createNew = '__new_interest__';
   final List<Interest> interests;
   final String? selectedId;
   final DateTime Function() clock;
+  final Future<List<Interest>?> Function(Interest) onManage;
+  final Future<List<Interest>> Function(Interest) onRekindle;
 
   @override
   State<CategoryOverview> createState() => _CategoryOverviewState();
@@ -31,12 +36,65 @@ class _CategoryOverviewState extends State<CategoryOverview>
     with WidgetsBindingObserver {
   late DateTime _now;
   late final List<Interest> _interests = List.of(widget.interests);
+  late String? _selectedId = widget.selectedId;
   Timer? _timer;
   final _scroll = ScrollController();
   int? _pullPointer;
   Offset _pullTravel = Offset.zero;
   double _wheelTravel = 0;
   bool _returning = false;
+  bool _showArchived = false;
+
+  void _replaceInterests(List<Interest> updated) {
+    final previousIndex = _interests
+        .where((item) => !item.isArchived)
+        .toList()
+        .indexWhere((item) => item.id == _selectedId);
+    setState(() {
+      _interests
+        ..clear()
+        ..addAll(updated);
+      final active = _interests.where((item) => !item.isArchived).toList();
+      if (_selectedId != null &&
+          !active.any((item) => item.id == _selectedId)) {
+        _selectedId = active.isEmpty
+            ? null
+            : active[math.min(math.max(0, previousIndex), active.length - 1)]
+                  .id;
+      }
+    });
+  }
+
+  Future<void> _manage(Interest interest) async {
+    final updated = await widget.onManage(interest);
+    if (mounted && updated != null) _replaceInterests(updated);
+  }
+
+  Future<void> _openArchived(Interest interest) async {
+    final updated = await showModalBottomSheet<List<Interest>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      constraints: const BoxConstraints(maxWidth: 460),
+      builder: (_) => ArchivedFireSheet(
+        interest: interest,
+        onRekindle: widget.onRekindle,
+        onDelete: widget.onManage,
+      ),
+    );
+    if (!mounted || updated == null) return;
+    _replaceInterests(updated);
+    if (updated.any((item) => item.id == interest.id && !item.isArchived)) {
+      Navigator.pop(context, interest.id);
+    }
+  }
+
+  void _changeTab(bool archived) {
+    setState(() => _showArchived = archived);
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
   bool get _atTop =>
       _scroll.hasClients &&
       _scroll.position.pixels <= _scroll.position.minScrollExtent + .5;
@@ -111,7 +169,15 @@ class _CategoryOverviewState extends State<CategoryOverview>
   @override
   Widget build(BuildContext context) {
     final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
-    final visible = _interests;
+    final visible = _interests
+        .where((item) => item.isArchived == _showArchived)
+        .toList();
+    if (_showArchived) {
+      visible.sort(
+        (a, b) =>
+            b.lastArchive!.occurredAt.compareTo(a.lastArchive!.occurredAt),
+      );
+    }
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -192,48 +258,84 @@ class _CategoryOverviewState extends State<CategoryOverview>
                               ),
                               const SizedBox(height: 10),
                               Text(
-                                '마음이 머무는 곳을 한눈에.\n불을 누르면 그 관심사로 돌아가요.',
+                                _showArchived
+                                    ? '꺼진 불도 과거에 실제로 타고 있었어요.\n남긴 장작과 내려놓은 이유를 다시 꺼내봐요.'
+                                    : '마음이 머무는 곳을 한눈에.\n불을 누르면 그 관심사로 돌아가요.',
                                 style: TextStyle(
                                   color: DiaryTheme.cream.withValues(alpha: .7),
                                   fontSize: 12,
                                   height: 1.8,
                                 ),
                               ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  _CategoryTab(
+                                    label: '피워둔 불',
+                                    selected: !_showArchived,
+                                    onTap: () => _changeTab(false),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _CategoryTab(
+                                    label: '보관한 불',
+                                    selected: _showArchived,
+                                    onTap: () => _changeTab(true),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
                       ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
-                        sliver: SliverGrid.builder(
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: textScale > 1.35 ? 1 : 2,
-                                mainAxisSpacing: 16,
-                                crossAxisSpacing: 14,
-                                mainAxisExtent:
-                                    238 + math.max(0, textScale - 1) * 72,
+                      if (_showArchived && visible.isEmpty)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(40),
+                            child: Text(
+                              '아직 보관한 불이 없어요',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: DiaryTheme.cream,
+                                fontSize: 13,
                               ),
-                          itemCount: visible.length + 1,
-                          itemBuilder: (context, index) {
-                            if (index == visible.length) {
-                              return _NewCategory(
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  CategoryOverview.createNew,
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
+                          sliver: SliverGrid.builder(
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: textScale > 1.35 ? 1 : 2,
+                                  mainAxisSpacing: 16,
+                                  crossAxisSpacing: 14,
+                                  mainAxisExtent:
+                                      238 + math.max(0, textScale - 1) * 72,
                                 ),
+                            itemCount: visible.length + (_showArchived ? 0 : 1),
+                            itemBuilder: (context, index) {
+                              if (index == visible.length) {
+                                return _NewCategory(
+                                  onTap: () => Navigator.pop(
+                                    context,
+                                    CategoryOverview.createNew,
+                                  ),
+                                );
+                              }
+                              final interest = visible[index];
+                              return _CategoryCard(
+                                interest: interest,
+                                level: interest.levelAt(_now),
+                                selected: interest.id == _selectedId,
+                                onTap: () => interest.isArchived
+                                    ? _openArchived(interest)
+                                    : Navigator.pop(context, interest.id),
+                                onLongPress: () => _manage(interest),
                               );
-                            }
-                            final interest = visible[index];
-                            return _CategoryCard(
-                              interest: interest,
-                              level: interest.levelAt(_now),
-                              selected: interest.id == widget.selectedId,
-                              onTap: () => Navigator.pop(context, interest.id),
-                            );
-                          },
+                            },
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -246,24 +348,59 @@ class _CategoryOverviewState extends State<CategoryOverview>
   }
 }
 
+class _CategoryTab extends StatelessWidget {
+  const _CategoryTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: onTap,
+    style: TextButton.styleFrom(
+      foregroundColor: DiaryTheme.cream.withValues(alpha: selected ? 1 : .6),
+      backgroundColor: DiaryTheme.cream.withValues(alpha: selected ? .12 : .02),
+      side: BorderSide(
+        color: DiaryTheme.cream.withValues(alpha: selected ? .4 : .15),
+      ),
+      shape: const StadiumBorder(),
+      minimumSize: const Size(0, 40),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+    ),
+    child: Text(label, style: const TextStyle(fontSize: 12)),
+  );
+}
+
 class _CategoryCard extends StatelessWidget {
   const _CategoryCard({
     required this.interest,
     required this.level,
     required this.selected,
     required this.onTap,
+    required this.onLongPress,
   });
   final Interest interest;
   final FireLevel level;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  String get _status => '${level.index}단계 · ${level.label}';
+  String get _status {
+    if (!interest.isArchived) return '${level.index}단계 · ${level.label}';
+    final archived = interest.lastArchive!;
+    return archived.reason == ArchiveReason.custom
+        ? (archived.note ?? '잠시 내려둔 불')
+        : (archived.reason?.label ?? '잠시 내려둔 불');
+  }
 
   @override
   Widget build(BuildContext context) => _TileSurface(
     selected: selected,
     onTap: onTap,
+    onLongPress: onLongPress,
     child: Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -374,10 +511,12 @@ class _TileSurface extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.selected = false,
+    this.onLongPress,
   });
   final VoidCallback onTap;
   final Widget child;
   final bool selected;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -389,6 +528,6 @@ class _TileSurface extends StatelessWidget {
         color: DiaryTheme.cream.withValues(alpha: selected ? .6 : .18),
       ),
     ),
-    child: InkWell(onTap: onTap, child: child),
+    child: InkWell(onTap: onTap, onLongPress: onLongPress, child: child),
   );
 }

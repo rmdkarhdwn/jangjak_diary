@@ -115,7 +115,7 @@ void main() {
       expect(migrated[0].entries.single.text, '기존 장작');
       expect(migrated[0].heatUpdatedAt, start);
       expect(migrated[0].levelAt(now), FireLevel.revivedEmber);
-      expect(jsonDecode(saved!)['version'], 2);
+      expect(jsonDecode(saved!)['version'], 3);
       now = now.add(const Duration(days: 3));
       final reopened = await open().load();
       expect(reopened[1].heatUpdatedAt, start.add(const Duration(days: 3)));

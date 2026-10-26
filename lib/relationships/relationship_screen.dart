@@ -364,7 +364,7 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                   children: [
                     Expanded(
                       child: Text(
-                        '${interest.title} · ${interest.levelAt(_now).label}',
+                        '${interest.title} · ${interest.isArchived ? '보관한 불' : interest.levelAt(_now).label}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -382,7 +382,7 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: Text(
-                          '이 불로 가기 ↗',
+                          interest.isArchived ? '기록 보기 ↗' : '이 불로 가기 ↗',
                           style: const TextStyle(fontSize: 10),
                         ),
                       ),

@@ -12,6 +12,8 @@ import 'diary_sheets.dart';
 import 'home_widgets.dart';
 import 'animated_fireplace.dart';
 import 'category_overview.dart';
+import 'fire_actions_dialog.dart';
+import 'archived_fire_sheet.dart';
 
 class DiaryHome extends StatefulWidget {
   const DiaryHome({super.key, required this.store});
@@ -22,12 +24,15 @@ class DiaryHome extends StatefulWidget {
 }
 
 class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
-  List<Interest>? _interests;
+  List<Interest>? _allInterests;
+  List<Interest>? get _interests =>
+      _allInterests?.where((item) => !item.isArchived).toList();
   bool _loadFailed = false;
   int _selected = 1;
   late DateTime _now;
   Timer? _clockTimer;
   bool _overviewOpen = false;
+  bool _deleteOpen = false;
   double _verticalTravel = 0;
   double _wheelTravel = 0;
   bool _appActive = true;
@@ -68,13 +73,14 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
       final interests = await widget.store.load();
       if (!mounted) return;
       _pager.dispose();
-      _selected = interests.isEmpty ? 0 : math.min(1, interests.length - 1);
+      final active = interests.where((item) => !item.isArchived).toList();
+      _selected = active.isEmpty ? 0 : math.min(1, active.length - 1);
       _pager = PageController(
         initialPage: _selected,
         viewportFraction: 282 / 393,
       );
       setState(() {
-        _interests = interests;
+        _allInterests = interests;
         _now = widget.store.now;
       });
     } catch (_) {
@@ -107,13 +113,13 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
       hint: '예: 산책하기, 그림 그리기',
       submitLabel: '불 피우기',
       onSave: (title) async {
-        if (_interests!.any(
+        if (_allInterests!.any(
           (item) => item.title.toLowerCase() == title.toLowerCase(),
         )) {
-          throw const FormatException('이미 피워둔 불이에요. 다른 이름을 적어주세요.');
+          throw const FormatException('이미 있거나 보관한 불이에요. 전체 분류에서 확인해 주세요.');
         }
         final updated = [
-          ..._interests!,
+          ..._allInterests!,
           Interest(
             id: widget.store.now.microsecondsSinceEpoch.toString(),
             title: title,
@@ -122,7 +128,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
         ];
         await widget.store.save(updated);
         if (!mounted) return;
-        setState(() => _interests = updated);
+        setState(() => _allInterests = updated);
         await WidgetsBinding.instance.endOfFrame;
         if (!mounted || !_pager.hasClients) return;
         await _pager.animateToPage(
@@ -149,7 +155,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
         multiline: true,
         onSave: (text) async {
           final entry = DiaryEntry(text: text, createdAt: widget.store.now);
-          final updated = _interests!
+          final updated = _allInterests!
               .map(
                 (item) => item.id == current.id ? item.withEntry(entry) : item,
               )
@@ -157,7 +163,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
           await widget.store.save(updated);
           if (mounted) {
             setState(() {
-              _interests = updated;
+              _allInterests = updated;
               _now = widget.store.now;
             });
           }
@@ -173,6 +179,79 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     if (addEntry == true && mounted) await _addEntry();
   }
 
+  Future<void> _saveMutation(List<Interest> updated, {String? selectId}) async {
+    final currentId = selectId ?? _current?.id;
+    final active = updated.where((item) => !item.isArchived).toList();
+    final preserved = active.indexWhere((item) => item.id == currentId);
+    final nextIndex = currentId == null
+        ? active.length
+        : preserved >= 0
+        ? preserved
+        : math.min(_selected, math.max(0, active.length - 1));
+    await widget.store.save(updated);
+    if (!mounted) return;
+    setState(() {
+      _allInterests = updated;
+      _selected = nextIndex;
+      _now = widget.store.now;
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted && _pager.hasClients) _pager.jumpToPage(nextIndex);
+  }
+
+  Future<List<Interest>> _rekindle(Interest interest) async {
+    final updated = _allInterests!
+        .map(
+          (item) =>
+              item.id == interest.id ? item.rekindle(widget.store.now) : item,
+        )
+        .toList();
+    await _saveMutation(updated, selectId: interest.id);
+    return updated;
+  }
+
+  Future<List<Interest>?> _manageInterest(Interest interest) async {
+    if (_deleteOpen || !_allInterests!.any((item) => item.id == interest.id)) {
+      return null;
+    }
+    _deleteOpen = true;
+    try {
+      final changed =
+          await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => FireActionsDialog(
+              interest: interest,
+              permanentOnly: interest.isArchived,
+              onArchive: (reason, note) => _saveMutation(
+                _allInterests!
+                    .map(
+                      (item) => item.id == interest.id
+                          ? item.archive(
+                              widget.store.now,
+                              reason: reason,
+                              note: note,
+                            )
+                          : item,
+                    )
+                    .toList(),
+              ),
+              onDelete: () async {
+                await _saveMutation(
+                  _allInterests!
+                      .where((item) => item.id != interest.id)
+                      .toList(),
+                );
+              },
+            ),
+          ) ??
+          false;
+      return changed ? List.of(_allInterests!) : null;
+    } finally {
+      _deleteOpen = false;
+    }
+  }
+
   Future<void> _goTo(int index) => _pager.animateToPage(
     index,
     duration: const Duration(milliseconds: 350),
@@ -185,7 +264,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     final id = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => RelationshipScreen(
-          interests: _interests!,
+          interests: _allInterests!,
           clock: () => widget.store.now,
         ),
       ),
@@ -199,6 +278,17 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     if (index >= 0) {
       await WidgetsBinding.instance.endOfFrame;
       if (mounted && _pager.hasClients) await _goTo(index);
+    } else if (id != null) {
+      final matches = _allInterests!.where((item) => item.id == id);
+      if (matches.isNotEmpty && matches.first.isArchived) {
+        await _sheet<List<Interest>>(
+          ArchivedFireSheet(
+            interest: matches.first,
+            onRekindle: _rekindle,
+            onDelete: _manageInterest,
+          ),
+        );
+      }
     }
   }
 
@@ -216,9 +306,11 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
               ? Duration.zero
               : const Duration(milliseconds: 320),
           pageBuilder: (_, animation, secondaryAnimation) => CategoryOverview(
-            interests: _interests!,
+            interests: _allInterests!,
             selectedId: _current?.id,
             clock: () => widget.store.now,
+            onManage: _manageInterest,
+            onRekindle: _rekindle,
           ),
           transitionsBuilder: (_, animation, secondaryAnimation, child) =>
               SlideTransition(
@@ -434,7 +526,11 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
                   return Semantics(
                     label: interest?.title ?? '새 불 만들기',
                     button: true,
+                    hint: interest == null ? null : '길게 눌러 보관 또는 완전 삭제',
                     child: GestureDetector(
+                      onLongPress: interest == null
+                          ? null
+                          : () => _manageInterest(interest),
                       onTap: () {
                         if (index != _selected) {
                           _goTo(index);

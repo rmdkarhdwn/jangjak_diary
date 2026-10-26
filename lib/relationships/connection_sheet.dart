@@ -147,6 +147,52 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                   height: 1.9,
                 ),
               ),
+              for (final interest in [
+                _current.left,
+                _current.right,
+              ].where((item) => item.isArchived))
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .035),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${interest.title} · 보관한 불',
+                          style: const TextStyle(
+                            color: Color(0xFFE3C09C),
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          interest.lastArchive!.reason?.label ??
+                              '이유를 남기지 않고 보관했어요.',
+                          style: const TextStyle(
+                            color: soft,
+                            fontSize: 11,
+                            height: 1.7,
+                          ),
+                        ),
+                        if (interest.lastArchive!.note != null)
+                          Text(
+                            interest.lastArchive!.note!,
+                            style: const TextStyle(
+                              color: DiaryTheme.cream,
+                              fontSize: 12,
+                              height: 1.8,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 26),
               const _SectionTitle('근거 기록', icon: Icons.format_quote_rounded),
               const SizedBox(height: 12),
@@ -189,7 +235,9 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: Text(
-                                '이 불로 가기 ↗',
+                                evidence.interest.isArchived
+                                    ? '기록 보기 ↗'
+                                    : '이 불로 가기 ↗',
                                 style: const TextStyle(fontSize: 10),
                               ),
                             ),

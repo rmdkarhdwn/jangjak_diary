@@ -127,7 +127,7 @@ class EntryHistory extends StatelessWidget {
           description: '작은 마음들이 모여, 나만의 온기가 돼요.',
         ),
         const SizedBox(height: 28),
-        if (interest.entries.isEmpty) ...[
+        if (interest.entries.isEmpty && interest.events.isEmpty) ...[
           Center(
             child: Column(
               children: [
@@ -169,40 +169,101 @@ class EntryHistory extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          for (final entry in interest.entries)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .4),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: DiaryTheme.ink.withValues(alpha: .08),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    entryDateLabel(entry.createdAt),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: DiaryTheme.ink.withValues(alpha: .6),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SelectableText(
-                    entry.text,
-                    style: const TextStyle(fontSize: 14, height: 1.8),
-                  ),
-                ],
-              ),
-            ),
+          InterestTimeline(interest: interest),
         ],
       ],
     ),
   );
+}
+
+class InterestTimeline extends StatelessWidget {
+  const InterestTimeline({super.key, required this.interest});
+  final Interest interest;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({DateTime at, DiaryEntry? entry, FireEvent? event})>[
+      for (final entry in interest.entries)
+        (at: entry.createdAt, entry: entry, event: null),
+      for (final event in interest.events)
+        (at: event.occurredAt, entry: null, event: event),
+    ]..sort((a, b) => b.at.compareTo(a.at));
+    return Column(
+      children: [
+        for (final item in items)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(
+                alpha: item.event == null ? .4 : .2,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: DiaryTheme.ink.withValues(alpha: .08)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entryDateLabel(item.at),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: DiaryTheme.ink.withValues(alpha: .6),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (item.entry != null)
+                  SelectableText(
+                    item.entry!.text,
+                    style: const TextStyle(fontSize: 14, height: 1.8),
+                  )
+                else ...[
+                  Row(
+                    children: [
+                      Icon(
+                        item.event!.kind == FireEventKind.archived
+                            ? Icons.inventory_2_outlined
+                            : Icons.local_fire_department_outlined,
+                        size: 17,
+                        color: DiaryTheme.ink,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          item.event!.kind == FireEventKind.archived
+                              ? '불을 보관했어요'
+                              : '다시 불을 붙였어요',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (item.event!.reason != null &&
+                      item.event!.reason != ArchiveReason.custom) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      item.event!.reason!.label,
+                      style: const TextStyle(fontSize: 12, height: 1.7),
+                    ),
+                  ],
+                  if (item.event!.note != null) ...[
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      item.event!.note!,
+                      style: const TextStyle(fontSize: 13, height: 1.8),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class SheetSurface extends StatelessWidget {

@@ -192,7 +192,7 @@ class RelationshipGraphState extends State<RelationshipGraph>
                               button: true,
                               selected: widget.selectedId == interest.id,
                               label:
-                                  '${interest.title}, ${interest.levelAt(widget.now).label}, ${widget.map.connectionsFor(interest.id).length}개의 연결',
+                                  '${interest.title}, ${interest.isArchived ? '보관한 불' : interest.levelAt(widget.now).label}, ${widget.map.connectionsFor(interest.id).length}개의 연결',
                               onTap: () => widget.onSelect(interest.id),
                               child: ExcludeSemantics(
                                 child: GestureDetector(
@@ -323,7 +323,7 @@ class _FireNode extends StatelessWidget {
             ),
           ),
           Text(
-            interest.title,
+            interest.isArchived ? '${interest.title} · 보관' : interest.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,

@@ -15,6 +15,54 @@ enum FireLevel {
   final String description;
 }
 
+enum ArchiveReason {
+  cooled('관심이 식었어요'),
+  achieved('목표를 달성했어요'),
+  transitioned('다른 관심사로 이어졌어요'),
+  resting('지금은 쉬고 싶어요'),
+  custom('직접 입력');
+
+  const ArchiveReason(this.label);
+  final String label;
+}
+
+enum FireEventKind { archived, rekindled }
+
+class FireEvent {
+  const FireEvent({
+    required this.kind,
+    required this.occurredAt,
+    this.reason,
+    this.note,
+  });
+  final FireEventKind kind;
+  final DateTime occurredAt;
+  final ArchiveReason? reason;
+  final String? note;
+
+  Map<String, Object?> toJson() => {
+    'kind': kind.name,
+    'occurredAt': occurredAt.toUtc().toIso8601String(),
+    'reason': reason?.name,
+    'note': note,
+  };
+
+  factory FireEvent.fromJson(Map<String, dynamic> json) {
+    try {
+      return FireEvent(
+        kind: FireEventKind.values.byName(json['kind'] as String),
+        occurredAt: DateTime.parse(json['occurredAt'] as String),
+        reason: json['reason'] == null
+            ? null
+            : ArchiveReason.values.byName(json['reason'] as String),
+        note: json['note'] as String?,
+      );
+    } on ArgumentError {
+      throw const FormatException('잘못된 불의 이력입니다.');
+    }
+  }
+}
+
 class DiaryEntry {
   const DiaryEntry({required this.text, required this.createdAt});
 
@@ -39,6 +87,7 @@ class Interest {
     required this.heatUpdatedAt,
     this.level = FireLevel.faintEmber,
     this.entries = const [],
+    this.events = const [],
   });
 
   static const coolingInterval = Duration(days: 3);
@@ -48,7 +97,55 @@ class Interest {
   final FireLevel level;
   final DateTime heatUpdatedAt;
   final List<DiaryEntry> entries;
+  final List<FireEvent> events;
+
+  bool get isArchived =>
+      events.isNotEmpty && events.last.kind == FireEventKind.archived;
+  FireEvent? get lastArchive {
+    for (final event in events.reversed) {
+      if (event.kind == FireEventKind.archived) return event;
+    }
+    return null;
+  }
+
+  Interest archive(DateTime at, {ArchiveReason? reason, String? note}) {
+    if (isArchived) return this;
+    final trimmed = note?.trim();
+    return Interest(
+      id: id,
+      title: title,
+      heatUpdatedAt: heatUpdatedAt,
+      level: level,
+      entries: entries,
+      events: [
+        ...events,
+        FireEvent(
+          kind: FireEventKind.archived,
+          occurredAt: at,
+          reason: reason,
+          note: trimmed == null || trimmed.isEmpty ? null : trimmed,
+        ),
+      ],
+    );
+  }
+
+  Interest rekindle(DateTime at) {
+    if (!isArchived) return this;
+    return Interest(
+      id: id,
+      title: title,
+      heatUpdatedAt: at,
+      level: FireLevel.faintEmber,
+      entries: entries,
+      events: [
+        ...events,
+        FireEvent(kind: FireEventKind.rekindled, occurredAt: at),
+      ],
+    );
+  }
+
   FireLevel levelAt(DateTime now) {
+    if (isArchived) return FireLevel.ash;
     final elapsed = now.difference(heatUpdatedAt);
     if (elapsed.isNegative) return level;
     final steps = elapsed.inMicroseconds ~/ coolingInterval.inMicroseconds;
@@ -57,12 +154,14 @@ class Interest {
   }
 
   Interest withEntry(DiaryEntry entry) {
+    if (isArchived) throw StateError('다시 불붙인 뒤 장작을 넣을 수 있어요.');
     return Interest(
       id: id,
       title: title,
       level: FireLevel.values[(levelAt(entry.createdAt).index + 1).clamp(0, 5)],
       heatUpdatedAt: entry.createdAt,
       entries: [entry, ...entries],
+      events: events,
     );
   }
 
@@ -72,6 +171,7 @@ class Interest {
     'level': level.index,
     'heatUpdatedAt': heatUpdatedAt.toUtc().toIso8601String(),
     'entries': entries.map((entry) => entry.toJson()).toList(),
+    'events': events.map((event) => event.toJson()).toList(),
   };
 
   factory Interest.fromJson(
@@ -113,6 +213,9 @@ class Interest {
       level: level,
       heatUpdatedAt: anchor,
       entries: entries,
+      events: (json['events'] as List<dynamic>? ?? [])
+          .map((event) => FireEvent.fromJson(event as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -160,7 +263,7 @@ class DiaryStore {
     }
     final decoded = jsonDecode(raw) as Map<String, dynamic>;
     final version = decoded['version'];
-    if (version != 1 && version != 2) {
+    if (version != 1 && version != 2 && version != 3) {
       throw const FormatException('지원하지 않는 기록 형식입니다.');
     }
     final interests = (decoded['interests'] as List<dynamic>)
@@ -175,13 +278,13 @@ class DiaryStore {
     if (interests.isEmpty && version == 1) {
       throw const FormatException('관심사를 불러오지 못했습니다.');
     }
-    if (version == 1) await save(interests);
+    if (version != 3) await save(interests);
     return interests;
   }
 
   Future<void> save(List<Interest> interests) => _write(
     jsonEncode({
-      'version': 2,
+      'version': 3,
       'interests': interests.map((interest) => interest.toJson()).toList(),
     }),
   );
