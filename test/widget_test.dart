@@ -38,6 +38,24 @@ void main() {
     expect(find.text('사진 찍기'), findsOneWidget);
   });
 
+  testWidgets('opens the relationship map from the left of the plus button', (
+    tester,
+  ) async {
+    await openDiary(tester);
+    expect(
+      tester.getCenter(find.text('관계')).dx,
+      lessThan(tester.getCenter(find.byTooltip('새 불 만들기')).dx),
+    );
+    await tester.tap(find.text('관계'));
+    await tester.pumpAndSettle();
+    expect(find.text('관계도'), findsOneWidget);
+    expect(find.text('내 관심사'), findsOneWidget);
+    expect(find.text('예시 관계도'), findsOneWidget);
+    await tester.tap(find.byTooltip('내 불로 돌아가기'));
+    await tester.pumpAndSettle();
+    expect(find.text('기타 치기'), findsOneWidget);
+  });
+
   testWidgets('saves an entry under the current interest', (tester) async {
     await openDiary(tester);
     await tester.tap(find.text('장작 넣기'));

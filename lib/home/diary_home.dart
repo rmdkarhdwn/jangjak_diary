@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../diary/diary_store.dart';
 import '../theme/diary_theme.dart';
+import '../relationships/relationship_screen.dart';
 import 'diary_sheets.dart';
 import 'home_widgets.dart';
 import 'animated_fireplace.dart';
@@ -178,6 +179,29 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     curve: Curves.easeOutCubic,
   );
 
+  Future<void> _showRelationships() async {
+    if (_overviewOpen || _interests == null) return;
+    setState(() => _overviewOpen = true);
+    final id = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => RelationshipScreen(
+          interests: _interests!,
+          clock: () => widget.store.now,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _overviewOpen = false;
+      _now = widget.store.now;
+    });
+    final index = _interests!.indexWhere((item) => item.id == id);
+    if (index >= 0) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted && _pager.hasClients) await _goTo(index);
+    }
+  }
+
   Future<void> _showCategories() async {
     if (_overviewOpen || _interests == null) return;
     setState(() => _overviewOpen = true);
@@ -260,30 +284,47 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
             ),
           ],
         ),
-        Tooltip(
-          message: '새 불 만들기',
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: _newFire,
-              customBorder: const CircleBorder(),
-              child: Container(
-                width: 44 * scale,
-                height: 44 * scale,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0x2BEFE7DF)),
-                ),
-                child: Center(
-                  child: DesignIcon(
-                    'plus',
-                    width: 18 * scale,
-                    height: 18 * scale,
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: _showRelationships,
+              style: TextButton.styleFrom(
+                foregroundColor: DiaryTheme.cream,
+                minimumSize: const Size(0, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                side: const BorderSide(color: Color(0x2BEFE7DF)),
+                shape: const StadiumBorder(),
+              ),
+              icon: const Icon(Icons.hub_outlined, size: 16),
+              label: const Text('관계', style: TextStyle(fontSize: 11)),
+            ),
+            SizedBox(width: 10 * scale),
+            Tooltip(
+              message: '새 불 만들기',
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: _newFire,
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: math.max(44, 44 * scale),
+                    height: math.max(44, 44 * scale),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0x2BEFE7DF)),
+                    ),
+                    child: Center(
+                      child: DesignIcon(
+                        'plus',
+                        width: 18 * scale,
+                        height: 18 * scale,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ],
     ),

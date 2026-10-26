@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../diary/diary_store.dart';
 import '../theme/diary_theme.dart';
 import 'home_widgets.dart';
+import 'entry_date.dart';
 
 class DiaryComposer extends StatefulWidget {
   const DiaryComposer({
@@ -115,12 +116,6 @@ class EntryHistory extends StatelessWidget {
 
   final Interest interest;
 
-  String _date(DateTime date) {
-    final local = date.toLocal();
-    return '${local.year}년 ${local.month}월 ${local.day}일 · '
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) => SheetSurface(
     child: Column(
@@ -190,7 +185,7 @@ class EntryHistory extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _date(entry.createdAt),
+                    entryDateLabel(entry.createdAt),
                     style: TextStyle(
                       fontSize: 11,
                       color: DiaryTheme.ink.withValues(alpha: .6),
