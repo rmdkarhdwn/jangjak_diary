@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -8,6 +9,7 @@ import '../diary/diary_store.dart';
 import '../theme/diary_theme.dart';
 import 'diary_sheets.dart';
 import 'home_widgets.dart';
+import 'animated_fireplace.dart';
 
 class DiaryHome extends StatefulWidget {
   const DiaryHome({super.key, required this.store});
@@ -17,10 +19,13 @@ class DiaryHome extends StatefulWidget {
   State<DiaryHome> createState() => _DiaryHomeState();
 }
 
-class _DiaryHomeState extends State<DiaryHome> {
+class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
   List<Interest>? _interests;
   bool _loadFailed = false;
   int _selected = 1;
+  late DateTime _now;
+  Timer? _clockTimer;
+  bool _appActive = true;
   PageController _pager = PageController(
     initialPage: 1,
     viewportFraction: 282 / 393,
@@ -32,7 +37,24 @@ class _DiaryHomeState extends State<DiaryHome> {
   @override
   void initState() {
     super.initState();
+    _now = widget.store.now;
+    WidgetsBinding.instance.addObserver(this);
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (_appActive) _refreshClock();
+    });
     _load();
+  }
+
+  void _refreshClock() {
+    if (mounted) setState(() => _now = widget.store.now);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    setState(() {
+      _appActive = state == AppLifecycleState.resumed;
+      if (_appActive) _now = widget.store.now;
+    });
   }
 
   Future<void> _load() async {
@@ -41,12 +63,15 @@ class _DiaryHomeState extends State<DiaryHome> {
       final interests = await widget.store.load();
       if (!mounted) return;
       _pager.dispose();
-      _selected = math.min(1, interests.length - 1);
+      _selected = interests.isEmpty ? 0 : math.min(1, interests.length - 1);
       _pager = PageController(
         initialPage: _selected,
         viewportFraction: 282 / 393,
       );
-      setState(() => _interests = interests);
+      setState(() {
+        _interests = interests;
+        _now = widget.store.now;
+      });
     } catch (_) {
       if (mounted) setState(() => _loadFailed = true);
     }
@@ -54,6 +79,8 @@ class _DiaryHomeState extends State<DiaryHome> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _clockTimer?.cancel();
     _pager.dispose();
     super.dispose();
   }
@@ -83,8 +110,9 @@ class _DiaryHomeState extends State<DiaryHome> {
         final updated = [
           ..._interests!,
           Interest(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            id: widget.store.now.microsecondsSinceEpoch.toString(),
             title: title,
+            heatUpdatedAt: widget.store.now,
           ),
         ];
         await widget.store.save(updated);
@@ -93,7 +121,7 @@ class _DiaryHomeState extends State<DiaryHome> {
         await WidgetsBinding.instance.endOfFrame;
         if (!mounted || !_pager.hasClients) return;
         await _pager.animateToPage(
-          updated.length - 1,
+          _interests!.length - 1,
           duration: const Duration(milliseconds: 350),
           curve: Curves.easeOutCubic,
         );
@@ -115,14 +143,19 @@ class _DiaryHomeState extends State<DiaryHome> {
         submitLabel: '마음 남기기',
         multiline: true,
         onSave: (text) async {
-          final entry = DiaryEntry(text: text, createdAt: DateTime.now());
+          final entry = DiaryEntry(text: text, createdAt: widget.store.now);
           final updated = _interests!
               .map(
                 (item) => item.id == current.id ? item.withEntry(entry) : item,
               )
               .toList();
           await widget.store.save(updated);
-          if (mounted) setState(() => _interests = updated);
+          if (mounted) {
+            setState(() {
+              _interests = updated;
+              _now = widget.store.now;
+            });
+          }
         },
       ),
     );
@@ -135,7 +168,7 @@ class _DiaryHomeState extends State<DiaryHome> {
     if (addEntry == true && mounted) await _addEntry();
   }
 
-  void _goTo(int index) => _pager.animateToPage(
+  Future<void> _goTo(int index) => _pager.animateToPage(
     index,
     duration: const Duration(milliseconds: 350),
     curve: Curves.easeOutCubic,
@@ -191,13 +224,12 @@ class _DiaryHomeState extends State<DiaryHome> {
     ),
   );
 
-  Widget _heading(double scale) {
+  Widget _heading(double scale, {bool compact = false}) {
     final title = _current?.title ?? '새로운 불';
+    final level = _current?.levelAt(_now);
     final status = _current == null
         ? '마음이 가는 것을 찾아보세요'
-        : _current!.level == FireLevel.steady
-        ? '잔잔하게 타는 중'
-        : '불씨를 피우는 중';
+        : '${level!.index}단계 · ${level.label}';
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 28 * scale),
       child: Column(
@@ -209,10 +241,12 @@ class _DiaryHomeState extends State<DiaryHome> {
               key: ValueKey(title),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: DiaryTheme.title.copyWith(fontSize: 32 * scale),
+              style: DiaryTheme.title.copyWith(
+                fontSize: (compact ? 26 : 32) * scale,
+              ),
             ),
           ),
-          SizedBox(height: 9 * scale),
+          SizedBox(height: (compact ? 4 : 9) * scale),
           SizedBox(
             height: 24 * scale,
             child: Row(
@@ -235,7 +269,16 @@ class _DiaryHomeState extends State<DiaryHome> {
               ],
             ),
           ),
-          SizedBox(height: 18 * scale),
+          if (!compact)
+            Text(
+              level?.description ?? '작은 관심도 좋은 시작이에요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: DiaryTheme.cream.withValues(alpha: .58),
+                fontSize: 11 * scale,
+                height: 18 / 11,
+              ),
+            ),
         ],
       ),
     );
@@ -249,10 +292,13 @@ class _DiaryHomeState extends State<DiaryHome> {
         children: [
           Padding(
             padding: EdgeInsets.only(top: 4 * scale),
-            child: DesignIcon(
-              'ambient_glow',
-              width: 295 * scale,
-              height: 332 * scale,
+            child: Opacity(
+              opacity: ((_current?.levelAt(_now).index ?? 0) / 3).clamp(0, 1),
+              child: DesignIcon(
+                'ambient_glow',
+                width: 295 * scale,
+                height: 332 * scale,
+              ),
             ),
           ),
           ScrollConfiguration(
@@ -279,20 +325,6 @@ class _DiaryHomeState extends State<DiaryHome> {
                   final interest = index < _interests!.length
                       ? _interests![index]
                       : null;
-                  String asset = interest == null
-                      ? 'fireplace_shell'
-                      : interest.level == FireLevel.steady
-                      ? 'fireplace_steady'
-                      : 'fireplace_ember';
-                  final exactNeighbor =
-                      distance >= .999 &&
-                      interest?.level == FireLevel.ember &&
-                      (interest?.id == 'books' || interest?.id == 'running');
-                  if (exactNeighbor) {
-                    asset = interest!.id == 'books'
-                        ? 'fireplace_previous'
-                        : 'fireplace_next';
-                  }
                   return Semantics(
                     label: interest?.title ?? '새 불 만들기',
                     button: true,
@@ -320,8 +352,19 @@ class _DiaryHomeState extends State<DiaryHome> {
                               scale: 1 - .13 * distance,
                               alignment: Alignment.topCenter,
                               child: Opacity(
-                                opacity: exactNeighbor ? 1 : 1 - .62 * distance,
-                                child: FireplaceArt(name: asset, scale: scale),
+                                opacity: 1 - .62 * distance,
+                                child: interest == null
+                                    ? FireplaceArt(
+                                        name: 'fireplace_shell',
+                                        scale: scale,
+                                      )
+                                    : AnimatedFireplace(
+                                        key: ValueKey(interest.id),
+                                        level: interest.levelAt(_now),
+                                        scale: scale,
+                                        animate:
+                                            index == _selected && _appActive,
+                                      ),
                               ),
                             ),
                           ),
@@ -340,29 +383,33 @@ class _DiaryHomeState extends State<DiaryHome> {
 
   Widget _content(BoxConstraints constraints) {
     final scale = constraints.maxWidth / 393;
+    final compact = constraints.maxHeight < 700;
     final padding = MediaQuery.paddingOf(context);
-    final top = math.max(72 * scale, padding.top + 13);
-    final bottom = math.max(42 * scale, padding.bottom + 8);
-    final extra = math.max(
-      0.0,
-      constraints.maxHeight - (738 * scale + top + bottom),
-    );
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          SizedBox(height: top),
-          _header(scale),
-          SizedBox(height: 45 * scale + extra * .25),
-          _heading(scale),
-          SizedBox(height: 27 * scale + extra * .5),
-          _carousel(scale),
-          InterestIndicator(
-            count: _interests!.length + 1,
-            selected: _selected,
-            scale: scale,
-            onSelected: _goTo,
+    final top = math.max((compact ? 16 : 72) * scale, padding.top + 12);
+    final bottom = math.max(8 * scale, padding.bottom + 8);
+    return Column(
+      children: [
+        SizedBox(height: top),
+        _header(scale),
+        SizedBox(height: (compact ? 14 : 45) * scale),
+        _heading(scale, compact: compact),
+        SizedBox(height: (compact ? 8 : 27) * scale),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (_, space) {
+              final artScale = math.min(scale, space.maxHeight / 344);
+              return Center(child: _carousel(artScale));
+            },
           ),
-          SizedBox(height: 21 * scale),
+        ),
+        InterestIndicator(
+          count: _interests!.length + 1,
+          selected: _selected,
+          scale: scale,
+          onSelected: _goTo,
+        ),
+        SizedBox(height: (compact ? 6 : 12) * scale),
+        if (!compact) ...[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
@@ -375,25 +422,25 @@ class _DiaryHomeState extends State<DiaryHome> {
               ),
             ),
           ),
-          SizedBox(height: 16 * scale + extra * .25),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              HomeAction(
-                label: _isNewFire ? '불 피우기' : '장작 넣기',
-                onTap: _addEntry,
-                primary: true,
-                scale: scale,
-              ),
-              if (!_isNewFire) ...[
-                SizedBox(width: 28 * scale),
-                HomeAction(label: '기록 보기', onTap: _history, scale: scale),
-              ],
-            ],
-          ),
-          SizedBox(height: bottom),
+          SizedBox(height: 10 * scale),
         ],
-      ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            HomeAction(
+              label: _isNewFire ? '불 피우기' : '장작 넣기',
+              onTap: _addEntry,
+              primary: true,
+              scale: scale,
+            ),
+            if (!_isNewFire) ...[
+              SizedBox(width: 28 * scale),
+              HomeAction(label: '기록 보기', onTap: _history, scale: scale),
+            ],
+          ],
+        ),
+        SizedBox(height: bottom),
+      ],
     );
   }
 

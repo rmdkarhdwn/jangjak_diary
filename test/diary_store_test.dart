@@ -2,6 +2,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jangjak_diary/diary/diary_store.dart';
 
 void main() {
+  test('deleting the final interest stays empty after reopening', () async {
+    String? saved;
+    DiaryStore open() => DiaryStore(
+      read: () async => saved,
+      write: (value) async => saved = value,
+    );
+    await open().load();
+    await open().save([]);
+    expect(await open().load(), isEmpty);
+  });
+
+  test(
+    'adding logs grows the fire to level five instead of resetting it',
+    () async {
+      final store = DiaryStore(read: () async => null, write: (_) async {});
+      var interest = (await store.load())[1];
+      for (var i = 0; i < 4; i++) {
+        interest = interest.withEntry(
+          DiaryEntry(text: '연습 $i', createdAt: DateTime.now()),
+        );
+      }
+      expect(interest.level.index, 5);
+      expect(interest.entries.length, 4);
+    },
+  );
+
   test(
     'loading stored entries preserves their interest and timestamp',
     () async {
