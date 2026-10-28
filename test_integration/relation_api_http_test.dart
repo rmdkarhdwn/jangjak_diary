@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jangjak_diary/diary/diary_store.dart';
 import 'package:jangjak_diary/relationships/relation_api.dart';
+import 'package:jangjak_diary/relationships/relation_analysis_store.dart';
 
 void main() {
   final now = DateTime.utc(2026, 10, 26);
@@ -82,6 +83,61 @@ void main() {
       expect(edge.right.id, 'guitar');
       expect(edge.evidence.single.interest.id, 'books');
       expect(edge.evidence.single.entry.text, text);
+    },
+  );
+
+  test(
+    'persistent cache gates real HTTP until three new records and restores the last valid graph after upstream failure',
+    () async {
+      String? saved;
+      RelationAnalysisStore open() => RelationAnalysisStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+      );
+      var cache = open();
+      final original = input('Flutter');
+      await cache.analyze(original, api, () => now);
+      cache = open();
+      expect((await cache.restore(original)).connections.single.strength, 0.66);
+      final afterFirst = saved;
+      await cache.analyze(original, api, () => now);
+      expect(saved, afterFirst); // No attempt reserved and no HTTP.
+      List<Interest> withNew(int count) => [
+        Interest(
+          id: 'flutter',
+          title: 'Flutter',
+          heatUpdatedAt: now,
+          entries: [
+            for (var i = 0; i < count; i++)
+              DiaryEntry(
+                text: '새 장작 $i',
+                createdAt: now.add(Duration(minutes: i + 1)),
+              ),
+            ...original.first.entries,
+          ],
+        ),
+        original.last,
+      ];
+      await cache.analyze(withNew(2), api, () => now);
+      expect(saved, afterFirst);
+      expect(cache.status(withNew(3), now).canUpdate, true);
+      await cache.analyze(withNew(3), api, () => now);
+      expect(cache.status(withNew(3), now).canUpdate, false);
+      final failed = input('__upstream_failure__');
+      await expectLater(
+        cache.analyze(failed, api, () => now),
+        throwsA(
+          isA<RelationApiException>().having(
+            (error) => error.code,
+            'code',
+            'LLM_API_ERROR',
+          ),
+        ),
+      );
+      expect(cache.cachedMap(failed).connections.single.strength, 0.66);
+      final restored = open();
+      expect((await restored.restore(failed)).connections, hasLength(1));
+      expect(restored.status(failed, now).canUpdate, true);
     },
   );
 }

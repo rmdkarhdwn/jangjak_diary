@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import '../diary/diary_store.dart';
 import '../theme/diary_theme.dart';
 import '../relationships/relationship_screen.dart';
+import '../relationships/relation_analysis_store.dart';
+import '../relationships/relation_api.dart';
 import 'diary_sheets.dart';
 import 'home_widgets.dart';
 import 'animated_fireplace.dart';
@@ -16,14 +18,16 @@ import 'fire_actions_dialog.dart';
 import 'archived_fire_sheet.dart';
 
 class DiaryHome extends StatefulWidget {
-  const DiaryHome({super.key, required this.store});
+  const DiaryHome({super.key, required this.store, this.analysisStore});
   final DiaryStore store;
+  final RelationAnalysisStore? analysisStore;
 
   @override
   State<DiaryHome> createState() => _DiaryHomeState();
 }
 
 class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
+  late final _relations = widget.analysisStore ?? RelationAnalysisStore();
   List<Interest>? _allInterests;
   List<Interest>? get _interests =>
       _allInterests?.where((item) => !item.isArchived).toList();
@@ -106,6 +110,16 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     builder: (_) => child,
   );
 
+  Future<void> _saveInterests(List<Interest> updated) async {
+    await widget.store.save(updated);
+    try {
+      await _relations.restore(updated);
+    } on RelationApiException {
+      // Diary saving succeeded independently. The relation screen offers a
+      // cache retry and always validates evidence before showing an old edge.
+    }
+  }
+
   Future<void> _newFire() => _sheet<void>(
     DiaryComposer(
       title: '새 불을 피워볼까요?',
@@ -126,7 +140,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
             heatUpdatedAt: widget.store.now,
           ),
         ];
-        await widget.store.save(updated);
+        await _saveInterests(updated);
         if (!mounted) return;
         setState(() => _allInterests = updated);
         await WidgetsBinding.instance.endOfFrame;
@@ -160,7 +174,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
                 (item) => item.id == current.id ? item.withEntry(entry) : item,
               )
               .toList();
-          await widget.store.save(updated);
+          await _saveInterests(updated);
           if (mounted) {
             setState(() {
               _allInterests = updated;
@@ -194,7 +208,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
     final updated = _allInterests!
         .map((item) => item.id == id ? edited : item)
         .toList();
-    await widget.store.save(updated);
+    await _saveInterests(updated);
     if (mounted) setState(() => _allInterests = updated);
     return edited;
   }
@@ -208,7 +222,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
         : preserved >= 0
         ? preserved
         : math.min(_selected, math.max(0, active.length - 1));
-    await widget.store.save(updated);
+    await _saveInterests(updated);
     if (!mounted) return;
     setState(() {
       _allInterests = updated;
@@ -286,6 +300,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
         builder: (_) => RelationshipScreen(
           interests: _allInterests!,
           clock: () => widget.store.now,
+          analysisStore: _relations,
         ),
       ),
     );

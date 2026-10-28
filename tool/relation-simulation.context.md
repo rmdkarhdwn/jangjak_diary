@@ -27,6 +27,12 @@ access, inference quality or physical-device LAN reachability.
 ## Observations
 
 <!-- begin:observations -->
+2026-10-26: the five-test HTTP suite passed with persistent caching. Only the
+initial analysis, the update after three new records, and the injected upstream
+failure reached `anthropic` in the cache scenario; reopening, identical inputs,
+and two new records emitted no extra upstream request. The only member served
+all expected traffic; none stayed silent. Its isolated backend uses a 20-call
+in-memory test budget so the production five-call budget cannot contaminate it.
 2026-10-26: all four HTTP integration tests passed after adding recordless
 candidate identities and source-only topic evidence. The sole `anthropic`
 member served shared-log, explicit-reference, upstream-500 and malformed-JSON

@@ -12,6 +12,7 @@ import 'package:jangjak_diary/relationships/force_layout.dart';
 import 'package:jangjak_diary/relationships/relationship_data.dart';
 import 'package:jangjak_diary/relationships/relationship_screen.dart';
 import 'package:jangjak_diary/relationships/relation_api.dart';
+import 'package:jangjak_diary/relationships/relation_analysis_store.dart';
 import 'package:jangjak_diary/theme/diary_theme.dart';
 
 void main() {
@@ -134,6 +135,10 @@ void main() {
         home: RelationshipScreen(
           interests: interests ?? pair,
           clock: () => now,
+          analysisStore: RelationAnalysisStore(
+            read: () async => null,
+            write: (_) async {},
+          ),
           api: RelationApi(
             baseUrl: 'http://test.local',
             client: MockClient(
@@ -168,7 +173,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     if ((interests ?? pair).any((item) => item.id == 'books')) {
-      await tester.tap(find.text('관계 분석하기'));
+      await tester.tap(find.text('관계 찾기'));
       await tester.pumpAndSettle();
     }
   }

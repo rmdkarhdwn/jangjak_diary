@@ -9,6 +9,7 @@ import 'connection_sheet.dart';
 import 'relationship_data.dart';
 import 'relationship_graph.dart';
 import 'relation_api.dart';
+import 'relation_analysis_store.dart';
 
 class RelationshipScreen extends StatefulWidget {
   const RelationshipScreen({
@@ -16,10 +17,12 @@ class RelationshipScreen extends StatefulWidget {
     required this.interests,
     required this.clock,
     this.api,
+    this.analysisStore,
   });
   final List<Interest> interests;
   final DateTime Function() clock;
   final RelationApi? api;
+  final RelationAnalysisStore? analysisStore;
 
   @override
   State<RelationshipScreen> createState() => _RelationshipScreenState();
@@ -33,7 +36,10 @@ class _RelationshipScreenState extends State<RelationshipScreen>
     connections: const [],
   );
   late final _api = widget.api ?? RelationApi();
+  late final _cache = widget.analysisStore ?? RelationAnalysisStore();
   bool _loading = false;
+  bool _restoring = true;
+  bool _cacheReady = false;
   bool _analyzed = false;
   RelationApiException? _error;
   late final _example = exampleRelationshipMap(widget.clock());
@@ -48,10 +54,51 @@ class _RelationshipScreenState extends State<RelationshipScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _timer = Timer.periodic(const Duration(minutes: 1), (_) => _refresh());
+    _restore();
   }
 
   void _refresh() {
     if (mounted) setState(() => _now = widget.clock());
+  }
+
+  Future<void> _restore() async {
+    setState(() {
+      _restoring = true;
+      _error = null;
+    });
+    try {
+      final map = await _cache.restore(widget.interests);
+      if (mounted) {
+        setState(() {
+          _mine = map;
+          _analyzed = _cache.hasResult;
+          _cacheReady = true;
+        });
+      }
+    } on RelationApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error;
+          _mine = _cache.cachedMap(widget.interests);
+          _analyzed = _cache.hasResult;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  RelationAnalysisStatus get _status {
+    try {
+      return _cache.status(widget.interests, widget.clock());
+    } on RelationApiException catch (error) {
+      return RelationAnalysisStatus(
+        canUpdate: false,
+        message: error.message,
+        newRecords: 0,
+        remaining: 5,
+      );
+    }
   }
 
   @override
@@ -68,19 +115,19 @@ class _RelationshipScreenState extends State<RelationshipScreen>
   }
 
   Future<void> _analyze() async {
-    if (_loading) return;
+    if (_loading || _restoring || _cache.busy) return;
+    if (!_cacheReady) {
+      await _restore();
+      return;
+    }
+    if (!_status.canUpdate) return;
     setState(() {
       _loading = true;
-      _analyzed = false;
       _error = null;
       _selectedId = null;
-      _mine = RelationshipMap(
-        interests: widget.interests,
-        connections: const [],
-      );
     });
     try {
-      final result = await _api.analyze(widget.interests);
+      final result = await _cache.analyze(widget.interests, _api, widget.clock);
       if (mounted) {
         setState(() {
           _mine = result;
@@ -88,7 +135,12 @@ class _RelationshipScreenState extends State<RelationshipScreen>
         });
       }
     } on RelationApiException catch (error) {
-      if (mounted) setState(() => _error = error);
+      if (mounted) {
+        setState(() {
+          _error = error;
+          if (error.code == 'CACHE_WRITE_FAILED') _cacheReady = false;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -99,7 +151,13 @@ class _RelationshipScreenState extends State<RelationshipScreen>
         );
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _mine = _cache.cachedMap(widget.interests);
+          _analyzed = _cache.hasResult;
+        });
+      }
     }
   }
 
@@ -127,6 +185,8 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                 Text(
                   _loading
                       ? '관계를 분석하고 있어요…'
+                      : _restoring
+                      ? '저장된 관계를 불러오고 있어요…'
                       : _error != null
                       ? '관계 분석에 실패했어요'
                       : _analyzed
@@ -137,13 +197,13 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                 const SizedBox(height: 4),
                 Text(
                   _error != null
-                      ? '${_error!.message} (${_error!.code})'
+                      ? '${_error!.message} (${_error!.code})${_analyzed ? ' 저장된 관계는 계속 볼 수 있어요.' : ''}'
                       : _loading
                       ? '잠시만 기다려 주세요. 최대 55초 정도 걸릴 수 있어요.'
-                      : _analyzed && _mine.connections.isEmpty
-                      ? '이번 분석에서는 충분한 근거가 있는 연결을 찾지 못했어요.'
-                      : '분석을 누르면 최근 장작 원문을 AI 분석 서버로 보내요. 관심사별 최대 30개, 관심사 최대 12개예요.',
-                  maxLines: 3,
+                      : _restoring
+                      ? '기기에 저장한 마지막 분석을 확인하고 있어요.'
+                      : '${_status.message}${_analyzed && _mine.connections.isEmpty ? ' 이번 분석에서는 충분한 근거가 있는 연결을 찾지 못했어요.' : ''}',
+                  maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xFFB9ADBD),
@@ -151,13 +211,28 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                     height: 1.6,
                   ),
                 ),
+                if (!_restoring)
+                  Text(
+                    '오늘 ${5 - _status.remaining}/5회 사용 · 매일 자정 초기화',
+                    style: const TextStyle(
+                      color: Color(0xFF8F879D),
+                      fontSize: 9,
+                      height: 1.8,
+                    ),
+                  ),
               ],
             ),
           ),
         ),
         const SizedBox(width: 8),
         TextButton(
-          onPressed: _loading ? null : _analyze,
+          onPressed:
+              _loading ||
+                  _restoring ||
+                  _cache.busy ||
+                  (_cacheReady && !_status.canUpdate)
+              ? null
+              : _analyze,
           style: TextButton.styleFrom(
             foregroundColor: const Color(0xFFE3BD95),
             disabledForegroundColor: const Color(0xFF8F879D),
@@ -165,11 +240,13 @@ class _RelationshipScreenState extends State<RelationshipScreen>
           child: Text(
             _loading
                 ? '분석 중'
+                : _restoring
+                ? '불러오는 중'
                 : _error != null
                 ? '다시 시도'
                 : _analyzed
-                ? '다시 분석'
-                : '관계 분석하기',
+                ? '관계 업데이트'
+                : '관계 찾기',
             style: const TextStyle(fontSize: 11),
           ),
         ),
@@ -432,9 +509,9 @@ class _RelationshipScreenState extends State<RelationshipScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        !_showExample && _loading
+                        !_showExample && _loading && !_analyzed
                             ? '분석 결과를 기다리고 있어요'
-                            : !_showExample && _error != null
+                            : !_showExample && _error != null && !_analyzed
                             ? '분석 결과를 불러오지 못했어요'
                             : !_showExample && !_analyzed
                             ? '아직 관계를 분석하지 않았어요'

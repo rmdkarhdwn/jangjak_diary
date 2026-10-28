@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:jangjak_diary/diary/diary_store.dart';
 import 'package:jangjak_diary/relationships/relation_api.dart';
+import 'package:jangjak_diary/relationships/relation_analysis_store.dart';
 import 'package:jangjak_diary/relationships/relationship_graph.dart';
 import 'package:jangjak_diary/relationships/relationship_screen.dart';
 
@@ -36,6 +37,11 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final pending = Completer<http.Response>();
       var calls = 0;
+      String? saved;
+      RelationAnalysisStore openCache() => RelationAnalysisStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+      );
       final client = MockClient((_) async {
         calls++;
         return calls == 1
@@ -50,12 +56,13 @@ void main() {
             interests: interests,
             clock: () => now,
             api: api,
+            analysisStore: openCache(),
           ),
         ),
       );
       await tester.pumpAndSettle();
       expect(calls, 0);
-      await tester.tap(find.text('관계 분석하기'));
+      await tester.tap(find.text('관계 찾기'));
       await tester.pump();
       expect(find.text('관계를 분석하고 있어요…'), findsOneWidget);
       expect(
@@ -104,6 +111,33 @@ void main() {
         isEmpty,
       );
       expect(tester.takeException(), isNull);
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, '관계 업데이트'))
+            .onPressed,
+        isNull,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RelationshipScreen(
+            interests: interests,
+            clock: () => now,
+            api: api,
+            analysisStore: openCache(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('마지막 분석 이후 바뀐 기록이 없어요'), findsOneWidget);
+      expect(find.text('관계 분석을 마쳤어요'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, '관계 업데이트'))
+            .onPressed,
+        isNull,
+      );
+      expect(calls, 2);
     },
   );
 }

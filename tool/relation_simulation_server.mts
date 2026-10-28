@@ -14,7 +14,8 @@ const llm = createAnthropicLlm({
   timeoutMs: 2000,
   baseURL: process.env.SIMULATION_URL ?? 'http://127.0.0.1:4900/anthropic',
 });
-const app = await buildApp(loadConfig({}), llm);
+// Enough fixture calls for the integration suite; production remains 5/day.
+const app = await buildApp(loadConfig({ AI_DAILY_LIMIT: '20' }), llm);
 await app.listen({ host: '127.0.0.1', port: Number(process.env.SIMULATION_API_PORT ?? 3001) });
 console.log('Local simulation backend ready on 127.0.0.1:3001 (provider fixture, no live AI).');
 for (const signal of ['SIGINT', 'SIGTERM']) {
