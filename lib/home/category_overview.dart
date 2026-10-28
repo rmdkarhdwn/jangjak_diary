@@ -41,7 +41,9 @@ class _CategoryOverviewState extends State<CategoryOverview>
   late final List<Interest> _interests = List.of(widget.interests);
   late String? _selectedId = widget.selectedId;
   Timer? _timer;
-  final _scroll = ScrollController();
+  final _tabs = PageController();
+  final _scrolls = [ScrollController(), ScrollController()];
+  ScrollController get _scroll => _scrolls[_showArchived ? 1 : 0];
   int? _pullPointer;
   Offset _pullTravel = Offset.zero;
   double _wheelTravel = 0;
@@ -103,8 +105,16 @@ class _CategoryOverviewState extends State<CategoryOverview>
   }
 
   void _changeTab(bool archived) {
-    setState(() => _showArchived = archived);
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (!_tabs.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _tabs.jumpToPage(archived ? 1 : 0);
+      return;
+    }
+    _tabs.animateToPage(
+      archived ? 1 : 0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   bool get _atTop =>
@@ -174,22 +184,15 @@ class _CategoryOverviewState extends State<CategoryOverview>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    _scroll.dispose();
+    _tabs.dispose();
+    for (final scroll in _scrolls) {
+      scroll.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
-    final visible = _interests
-        .where((item) => item.isArchived == _showArchived)
-        .toList();
-    if (_showArchived) {
-      visible.sort(
-        (a, b) =>
-            b.lastArchive!.occurredAt.compareTo(a.lastArchive!.occurredAt),
-      );
-    }
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -206,155 +209,164 @@ class _CategoryOverviewState extends State<CategoryOverview>
                   onPointerUp: _endPull,
                   onPointerCancel: (_) => _pullPointer = null,
                   onPointerSignal: _handleWheel,
-                  child: CustomScrollView(
-                    key: const Key('category-page'),
-                    controller: _scroll,
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(28, 20, 28, 24),
-                        sliver: SliverToBoxAdapter(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const DesignIcon(
-                                    'brand_flame',
-                                    width: 15,
-                                    height: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    '장작일기',
-                                    style: TextStyle(
-                                      color: DiaryTheme.cream,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  IconButton.outlined(
-                                    tooltip: '내 불로 돌아가기',
-                                    onPressed: () => Navigator.pop(context),
-                                    style: IconButton.styleFrom(
-                                      foregroundColor: DiaryTheme.cream,
-                                      side: const BorderSide(
-                                        color: Color(0x40F4EDE1),
-                                      ),
-                                    ),
-                                    icon: const Icon(
-                                      Icons.keyboard_arrow_up_rounded,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 28),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      '전체 분류',
-                                      style: DiaryTheme.title,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${visible.length}개의 불',
-                                    style: TextStyle(
-                                      color: DiaryTheme.cream.withValues(
-                                        alpha: .68,
-                                      ),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                _showArchived
-                                    ? '꺼진 불도 과거에 실제로 타고 있었어요.\n남긴 장작과 내려놓은 이유를 다시 꺼내봐요.'
-                                    : '마음이 머무는 곳을 한눈에.\n불을 누르면 그 관심사로 돌아가요.',
-                                style: TextStyle(
-                                  color: DiaryTheme.cream.withValues(alpha: .7),
-                                  fontSize: 12,
-                                  height: 1.8,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  _CategoryTab(
-                                    label: '피워둔 불',
-                                    selected: !_showArchived,
-                                    onTap: () => _changeTab(false),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _CategoryTab(
-                                    label: '보관한 불',
-                                    selected: _showArchived,
-                                    onTap: () => _changeTab(true),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (_showArchived && visible.isEmpty)
-                        const SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.all(40),
-                            child: Text(
-                              '아직 보관한 불이 없어요',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: DiaryTheme.cream,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
-                          sliver: SliverGrid.builder(
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: textScale > 1.35 ? 1 : 2,
-                                  mainAxisSpacing: 16,
-                                  crossAxisSpacing: 14,
-                                  mainAxisExtent:
-                                      238 + math.max(0, textScale - 1) * 72,
-                                ),
-                            itemCount: visible.length + (_showArchived ? 0 : 1),
-                            itemBuilder: (context, index) {
-                              if (index == visible.length) {
-                                return _NewCategory(
-                                  onTap: () => Navigator.pop(
-                                    context,
-                                    CategoryOverview.createNew,
-                                  ),
-                                );
-                              }
-                              final interest = visible[index];
-                              return _CategoryCard(
-                                interest: interest,
-                                level: interest.levelAt(_now),
-                                selected: interest.id == _selectedId,
-                                onTap: () => interest.isArchived
-                                    ? _openArchived(interest)
-                                    : Navigator.pop(context, interest.id),
-                                onLongPress: () => _manage(interest),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
+                  child: PageView.builder(
+                    key: const Key('category-tabs'),
+                    controller: _tabs,
+                    itemCount: 2,
+                    onPageChanged: (index) {
+                      setState(() => _showArchived = index == 1);
+                      _pullPointer = null;
+                      _wheelTravel = 0;
+                    },
+                    itemBuilder: (context, index) =>
+                        _buildPage(context, archived: index == 1),
                   ),
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPage(BuildContext context, {required bool archived}) {
+    final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+    final visible = _interests
+        .where((item) => item.isArchived == archived)
+        .toList();
+    if (archived) {
+      visible.sort(
+        (a, b) =>
+            b.lastArchive!.occurredAt.compareTo(a.lastArchive!.occurredAt),
+      );
+    }
+    return KeyedSubtree(
+      key: PageStorageKey(
+        archived ? 'archived-category-scroll' : 'active-category-scroll',
+      ),
+      child: CustomScrollView(
+        key: archived
+            ? const Key('archived-category-page')
+            : const Key('category-page'),
+        controller: _scrolls[archived ? 1 : 0],
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(28, 20, 28, 24),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const DesignIcon('brand_flame', width: 15, height: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        '장작일기',
+                        style: TextStyle(color: DiaryTheme.cream, fontSize: 13),
+                      ),
+                      const Spacer(),
+                      IconButton.outlined(
+                        tooltip: '내 불로 돌아가기',
+                        onPressed: () => Navigator.pop(context),
+                        style: IconButton.styleFrom(
+                          foregroundColor: DiaryTheme.cream,
+                          side: const BorderSide(color: Color(0x40F4EDE1)),
+                        ),
+                        icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Expanded(
+                        child: Text('전체 분류', style: DiaryTheme.title),
+                      ),
+                      Text(
+                        '${visible.length}개의 불',
+                        style: TextStyle(
+                          color: DiaryTheme.cream.withValues(alpha: .68),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    archived
+                        ? '꺼진 불도 과거에 실제로 타고 있었어요.\n남긴 장작과 내려놓은 이유를 다시 꺼내봐요.'
+                        : '마음이 머무는 곳을 한눈에.\n불을 누르면 그 관심사로 돌아가요.',
+                    style: TextStyle(
+                      color: DiaryTheme.cream.withValues(alpha: .7),
+                      fontSize: 12,
+                      height: 1.8,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      _CategoryTab(
+                        label: '피워둔 불',
+                        selected: !archived,
+                        onTap: () => _changeTab(false),
+                      ),
+                      const SizedBox(width: 8),
+                      _CategoryTab(
+                        label: '보관한 불',
+                        selected: archived,
+                        onTap: () => _changeTab(true),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (archived && visible.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(40),
+                child: Text(
+                  '아직 보관한 불이 없어요',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: DiaryTheme.cream, fontSize: 13),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: textScale > 1.35 ? 1 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 14,
+                  mainAxisExtent: 238 + math.max(0, textScale - 1) * 72,
+                ),
+                itemCount: visible.length + (archived ? 0 : 1),
+                itemBuilder: (context, index) {
+                  if (index == visible.length) {
+                    return _NewCategory(
+                      onTap: () =>
+                          Navigator.pop(context, CategoryOverview.createNew),
+                    );
+                  }
+                  final interest = visible[index];
+                  return _CategoryCard(
+                    interest: interest,
+                    level: interest.levelAt(_now),
+                    selected: interest.id == _selectedId,
+                    onTap: () => interest.isArchived
+                        ? _openArchived(interest)
+                        : Navigator.pop(context, interest.id),
+                    onLongPress: () => _manage(interest),
+                  );
+                },
+              ),
+            ),
+        ],
       ),
     );
   }

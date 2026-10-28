@@ -654,6 +654,90 @@ void main() {
   });
 
   testWidgets(
+    'category tabs respond to horizontal swipes, taps and a pull back home',
+    (tester) async {
+      await openDiary(tester);
+      await tester.tap(find.text('전체 분류 보기'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('전체 분류'), const Offset(-300, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('아직 보관한 불이 없어요'), findsOneWidget);
+      expect(find.text('전체 분류'), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('archived-category-page')),
+        const Offset(300, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('책 읽기'), findsOneWidget);
+      expect(find.text('아직 보관한 불이 없어요'), findsNothing);
+      await tester.tap(find.text('보관한 불'));
+      await tester.pumpAndSettle();
+      expect(find.text('아직 보관한 불이 없어요'), findsOneWidget);
+      await tester.tap(find.text('피워둔 불'));
+      await tester.pumpAndSettle();
+      expect(find.text('책 읽기'), findsOneWidget);
+      await tester.drag(find.text('전체 분류'), const Offset(-300, 0));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('전체 분류'), const Offset(0, 180));
+      await tester.pumpAndSettle();
+      expect(find.text('전체 분류'), findsNothing);
+      expect(find.text('기타 치기'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'swiping retains each list position and archived cards still open their records',
+    (tester) async {
+      String? saved;
+      final now = DateTime.utc(2026, 10, 26, 12);
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+        now: () => now,
+      );
+      await store.save([
+        for (var i = 0; i < 15; i++)
+          Interest(id: 'interest-$i', title: '관심사 $i', heatUpdatedAt: now),
+        Interest(
+          id: 'archived',
+          title: '보관 기록',
+          heatUpdatedAt: now,
+          entries: [DiaryEntry(text: '남겨둔 장작 원문', createdAt: now)],
+        ).archive(now, reason: ArchiveReason.achieved),
+      ]);
+      await openDiary(tester, store: store);
+      await tester.tap(find.text('전체 분류 보기'));
+      await tester.pumpAndSettle();
+      final active = find.byKey(const Key('category-page'));
+      await tester.drag(active, const Offset(0, -550));
+      await tester.pumpAndSettle();
+      ScrollPosition activePosition() => tester
+          .state<ScrollableState>(
+            find.descendant(of: active, matching: find.byType(Scrollable)),
+          )
+          .position;
+      final before = activePosition().pixels;
+      expect(before, greaterThan(200));
+      await tester.drag(active, const Offset(-300, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('보관 기록'), findsOneWidget);
+      await tester.tap(find.text('보관 기록'));
+      await tester.pumpAndSettle();
+      expect(find.text('남겨둔 장작 원문'), findsOneWidget);
+      await tester.tap(find.byTooltip('닫기'));
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const Key('archived-category-page')),
+        const Offset(300, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(activePosition().pixels, closeTo(before, 1));
+      expect(find.text('전체 분류').hitTestable(), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'pulling down from the top of categories returns to the same fire',
     (tester) async {
       await openDiary(tester);
