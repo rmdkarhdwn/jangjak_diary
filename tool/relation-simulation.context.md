@@ -27,6 +27,11 @@ access, inference quality or physical-device LAN reachability.
 ## Observations
 
 <!-- begin:observations -->
+2026-10-26: all four HTTP integration tests passed after adding recordless
+candidate identities and source-only topic evidence. The sole `anthropic`
+member served shared-log, explicit-reference, upstream-500 and malformed-JSON
+calls. The reference quote mapped only to the book record, with no fabricated
+guitar entry. The single-interest/no-candidate empty path still bypassed AI.
 2026-10-26: all three integration tests passed. The only provider member,
 `anthropic`, handled three POST /v1/messages calls (valid 200, simulated 500,
 malformed output 200). The client received score 0.66, LLM_API_ERROR and

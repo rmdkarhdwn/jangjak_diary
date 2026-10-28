@@ -100,6 +100,93 @@ void main() {
   );
 
   test(
+    'sends recordless identities as candidates and maps one-sided topic evidence to its owner',
+    () async {
+      const text = '오늘 기타를 치는 책을 읽었다. 여러가지 주법이 있는게 신기했다.';
+      final input = [
+        fire('books', [text]),
+        fire('guitar', []),
+      ];
+      final service = RelationApi(
+        baseUrl: 'http://localhost:3000',
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map;
+          expect(body['candidateInterests'], [
+            {'id': 'guitar', 'title': 'guitar'},
+          ]);
+          expect((body['interests'] as List).length, 1);
+          return http.Response(
+            jsonEncode({
+              'relations': [
+                {
+                  'source': 'books',
+                  'target': 'guitar',
+                  'score': 0.95,
+                  'type': 'topic',
+                  'basis': 'explicit_reference',
+                  'summary': '책에서 기타 주법을 직접 다뤘어요.',
+                  'evidence': [text],
+                  'suggestion': '기타 주법 하나를 연습해보세요.',
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      );
+      final edge = (await service.analyze(input)).connections.single;
+      expect(edge.left.id, 'books');
+      expect(edge.right.id, 'guitar');
+      expect(edge.basis, RelationBasis.explicitReference);
+      expect(edge.strength, 0.95);
+      expect(edge.evidence.single.interest.id, 'books');
+      expect(edge.evidence.single.entry.text, text);
+    },
+  );
+
+  test(
+    'one-sided evidence cannot masquerade as shared motivation or use a fabricated quote',
+    () async {
+      final input = [interests.first, fire('game', [])];
+      final valid = {
+        ...relation(),
+        'type': 'topic',
+        'basis': 'explicit_reference',
+        'evidence': [interests.first.entries.single.text],
+      };
+      for (final invalid in [
+        {...valid, 'basis': 'shared_logs'},
+        {...valid, 'basis': 'unknown'},
+        {...valid, 'type': 'motivation'},
+        {...valid, 'source': 'game', 'target': 'real-id-123'},
+        {
+          ...valid,
+          'evidence': ['없는 기록'],
+        },
+        {...valid, 'target': 'unregistered'},
+      ]) {
+        await expectLater(
+          api({
+            'relations': [invalid],
+          }).analyze(input),
+          throwsA(
+            isA<RelationApiException>().having(
+              (e) => e.code,
+              'code',
+              'INVALID_RESPONSE',
+            ),
+          ),
+        );
+      }
+      final both = (await api({
+        'relations': [valid],
+      }).analyze(interests)).connections.single;
+      expect(both.evidence.single.interest.id, 'real-id-123');
+    },
+  );
+
+  test(
     'does not filter low server scores or create absent connections',
     () async {
       final map = await api({

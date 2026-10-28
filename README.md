@@ -62,9 +62,9 @@ flutter run -d chrome --web-port=8080 --dart-define=AI_BASE_URL=http://127.0.0.1
 
 실기기의 `localhost`는 휴대폰 자체입니다. `0.0.0.0`도 클라이언트 주소로 사용하지 않습니다. Mac의 Wi-Fi 주소는 `ipconfig getifaddr en0` 또는 시스템 설정에서 확인합니다. `/health`는 서버 생존만 확인하며 LLM 키의 유효성은 보장하지 않습니다.
 
-- **요청**: 실제 관심사 ID, 제목, 관심사별 최근 30개의 비어 있지 않은 장작 `text` 원문을 `logs: string[]`으로 보냅니다. 공백만 있는 기록과 기록이 없는 관심사는 제외하며 해당 노드는 화면에 남습니다. 중복·빈 ID는 전송 전에 오류로 안내합니다. 원문 앞뒤 공백·줄바꿈은 보존하고, 2,000자를 넘는 기록은 임의로 자르지 않습니다.
-- **제한**: 기록이 있는 관심사는 최대 12개, 요청은 최대 128 KiB입니다. 초과하면 일부 관심사를 몰래 제외하지 않고 오류로 안내합니다. 모든 기록이 비어 있으면 요청하지 않습니다. 기록이 있는 관심사가 하나면 서버의 정상적인 빈 관계 응답을 그대로 사용합니다.
-- **응답**: `source`/`target`을 실제 ID로 매핑하며 `score`(0~1)는 재계산·재가중·로컬 임계값 필터 없이 사용합니다. `topic`/`motivation`/`behavior`/`transition`을 구분하고 전이는 source → target 방향으로 표시합니다. 설명은 `summary`, 근거는 `evidence`, 행동 제안은 `suggestion`을 그대로 사용합니다. 근거 원문은 양쪽 기록과 대조해 원래 기록·날짜에 연결합니다.
+- **요청**: 실제 관심사 ID, 제목, 관심사별 최근 30개의 비어 있지 않은 장작 `text` 원문을 `logs: string[]`으로 보냅니다. 공백만 있는 기록은 제외합니다. 기록이 없는 관심사는 `candidateInterests`에 ID·제목만 보내 직접 언급의 연결 대상으로 사용할 수 있게 합니다. 빈 로그나 가짜 기록은 추가하지 않습니다. 중복·빈 ID는 전송 전에 오류로 안내합니다. 원문 앞뒤 공백·줄바꿈은 보존하고, 2,000자를 넘는 기록은 임의로 자르지 않습니다.
+- **제한**: 기록이 있는 관심사와 후보를 합쳐 최대 12개, 요청은 최대 128 KiB입니다. 초과하면 일부 관심사를 몰래 제외하지 않고 오류로 안내합니다. 모든 기록이 비어 있으면 요청하지 않습니다. 기록이 하나만 있어도 다른 관심사 후보가 있으면 분석하며, 실제 정상 빈 관계 응답은 그대로 사용합니다.
+- **응답**: `source`/`target`을 실제 ID로 매핑하며 `score`(0~1)는 재계산·재가중·로컬 임계값 필터 없이 사용합니다. `topic`/`motivation`/`behavior`/`transition`을 구분하고 전이는 source → target 방향으로 표시합니다. `basis: shared_logs`는 양쪽 기록의 공통점, `basis: explicit_reference`는 source 기록이 target의 관심사를 직접 다룬 주제 관계입니다. basis가 없는 이전 응답은 shared_logs로 해석합니다. 설명은 `summary`, 행동 제안은 `suggestion`을 그대로 사용합니다. shared_logs의 근거는 양쪽 원문과 대조하고, explicit_reference의 근거 1개 이상은 source의 원문·날짜에만 연결합니다. 바텀시트에서 어느 관심사 기록에서 나온 연결인지 표시합니다.
 - **실패 처리**: 정상 `relations: []`와 오류를 구분합니다. HTTP 오류의 `error.code/message`, 잘못된 JSON·ID·점수·근거, 연결 실패, 시간 초과를 안내하며 다시 시도할 수 있습니다. 중복 요청을 막고 55초 후 HTTP 요청을 취소합니다. 분석 결과는 영구 저장하지 않으므로 삭제된 관심사의 오래된 연결을 복원하지 않습니다.
 - **시간·보관 정보**: 현재 계약대로 문자열 로그만 전송합니다. 보관 이유·이력은 로컬에 유지되며 아직 별도 필드로 전송하지 않습니다. 백엔드는 날짜가 없는 문자열 로그에서 시간 점수를 0으로 처리하므로, 실제 시간 기반 전이 분석에는 이후 날짜 포함 계약 연결이 필요합니다.
 - **네트워크**: Android는 인터넷 권한을 추가하고, HTTP 허용 설정은 `src/debug/`에만 둡니다. iOS Debug만 `Runner/Info-Debug.plist`의 로컬 네트워크 설명과 HTTP 허용 설정을 사용하며 Release/Profile의 `Info.plist`에는 HTTP 예외를 추가하지 않습니다. 이는 [Flutter 개발 빌드 설정 안내](https://docs.flutter.dev/release/breaking-changes/network-policy-ios-android)를 따릅니다. 배포 서버에는 HTTPS를 사용하세요.
@@ -86,7 +86,7 @@ postman simulation run postman/simulations/relations-local/relations-local.sim.y
 flutter test --no-pub test_integration/relation_api_http_test.dart
 ```
 
-정상 score=0.66, 정상 빈 배열, 공급자 오류, 잘못된 AI JSON의 전파를 검증합니다. 이 검증은 실제 Haiku의 사용 권한·응답 품질이나 휴대폰에서 Mac까지의 연결을 증명하지 않습니다. 자세한 실행 근거는 `tool/relation-simulation.context.md`에 남깁니다.
+정상 score=0.66, 기록 없는 후보에 대한 직접 언급 score=0.95와 한쪽 근거, 정상 빈 배열, 공급자 오류, 잘못된 AI JSON의 전파를 검증합니다. 이 검증은 실제 Haiku의 사용 권한·응답 품질이나 휴대폰에서 Mac까지의 연결을 증명하지 않습니다. 자세한 실행 근거는 `tool/relation-simulation.context.md`에 남깁니다.
 
 ## 불의 단계
 

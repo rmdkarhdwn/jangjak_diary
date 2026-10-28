@@ -122,6 +122,18 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                   _NamePill(_current.right.title),
                 ],
               ),
+              if (_current.basis == RelationBasis.explicitReference)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    '‘${_current.left.title}’ 기록에 등장한 관심사를 연결했어요.',
+                    style: const TextStyle(
+                      color: soft,
+                      fontSize: 14,
+                      height: 1.7,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 18),
               Row(
                 children: [

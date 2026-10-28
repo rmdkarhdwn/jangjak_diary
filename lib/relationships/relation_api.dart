@@ -37,6 +37,7 @@ class RelationApi {
   static Map<String, Object> buildRequest(List<Interest> interests) {
     final ids = <String>{};
     final items = <Map<String, Object>>[];
+    final candidates = <Map<String, String>>[];
     for (final interest in interests) {
       if (interest.id.trim() != interest.id ||
           interest.id.isEmpty ||
@@ -47,15 +48,22 @@ class RelationApi {
           '관심사 ID가 비어 있거나 중복되어 분석할 수 없어요.',
         );
       }
+      if (interest.title.trim().isEmpty || interest.title.trim().length > 200) {
+        throw const RelationApiException(
+          'INVALID_INPUT',
+          '관심사 이름은 1~200자로 입력해 주세요.',
+        );
+      }
       final logs = interest.entries
           .where((entry) => entry.text.trim().isNotEmpty)
           .take(30)
           .map((entry) => entry.text)
           .toList();
-      if (logs.isEmpty) continue;
-      if (interest.title.trim().isEmpty ||
-          interest.title.trim().length > 200 ||
-          logs.any((text) => text.length > 2000)) {
+      if (logs.isEmpty) {
+        candidates.add({'id': interest.id, 'title': interest.title});
+        continue;
+      }
+      if (logs.any((text) => text.length > 2000)) {
         throw const RelationApiException(
           'INVALID_INPUT',
           '관심사 이름은 200자, 장작 기록은 2,000자까지 분석할 수 있어요. 원문은 줄이지 않습니다.',
@@ -63,13 +71,16 @@ class RelationApi {
       }
       items.add({'id': interest.id, 'title': interest.title, 'logs': logs});
     }
-    if (items.length > 12) {
+    if (items.length + candidates.length > 12) {
       throw const RelationApiException(
         'INVALID_INPUT',
-        '현재 서버는 기록이 있는 관심사를 한 번에 12개까지 분석할 수 있어요.',
+        '현재 서버는 관심사를 한 번에 12개까지 분석할 수 있어요.',
       );
     }
-    final request = <String, Object>{'interests': items};
+    final request = <String, Object>{
+      'interests': items,
+      if (candidates.isNotEmpty) 'candidateInterests': candidates,
+    };
     if (utf8.encode(jsonEncode(request)).length > 128 * 1024) {
       throw const RelationApiException(
         'PAYLOAD_TOO_LARGE',
@@ -176,6 +187,10 @@ class RelationApi {
       for (final item in request['interests']! as List)
         (item as Map)['id'] as String: Set<String>.from(item['logs'] as List),
     };
+    final candidates = {
+      for (final item in (request['candidateInterests'] as List? ?? []))
+        (item as Map)['id'] as String,
+    };
     final pairs = <String>{};
     final connections = <InterestConnection>[];
     for (final value in relations) {
@@ -184,11 +199,16 @@ class RelationApi {
       final score = value['score'], type = value['type'];
       final summary = value['summary'], evidence = value['evidence'];
       final suggestion = value['suggestion'];
+      final basisValue = value['basis'] ?? 'shared_logs';
+      final isReference = basisValue == 'explicit_reference';
       if (source is! String ||
           target is! String ||
           source == target ||
           !sent.containsKey(source) ||
-          !sent.containsKey(target) ||
+          (!sent.containsKey(target) && !candidates.contains(target)) ||
+          !nodes.containsKey(source) ||
+          !nodes.containsKey(target) ||
+          !RelationBasis.values.any((item) => item.apiValue == basisValue) ||
           score is! num ||
           !score.isFinite ||
           score < 0 ||
@@ -200,7 +220,7 @@ class RelationApi {
           suggestion is! String ||
           suggestion.trim().isEmpty ||
           evidence is! List ||
-          evidence.length < 2 ||
+          evidence.length < (isReference ? 1 : 2) ||
           evidence.length > 10 ||
           evidence.any((text) => text is! String || text.trim().isEmpty)) {
         throw invalidResponse;
@@ -208,7 +228,13 @@ class RelationApi {
       final pair = [source, target]..sort();
       if (!pairs.add(jsonEncode(pair))) throw invalidResponse;
       final quotes = evidence.cast<String>();
-      if (quotes.toSet().length != quotes.length ||
+      if (quotes.toSet().length != quotes.length) throw invalidResponse;
+      if (isReference) {
+        if (type != 'topic' ||
+            quotes.any((text) => !sent[source]!.contains(text))) {
+          throw invalidResponse;
+        }
+      } else if (!sent.containsKey(target) ||
           quotes.any(
             (text) =>
                 !sent[source]!.contains(text) && !sent[target]!.contains(text),
@@ -223,13 +249,16 @@ class RelationApi {
           left: nodes[source]!,
           right: nodes[target]!,
           strength: score.toDouble(),
-          themes: [kind.label],
+          themes: [isReference ? '기록 속 주제' : kind.label],
           type: kind,
+          basis: isReference
+              ? RelationBasis.explicitReference
+              : RelationBasis.sharedLogs,
           summary: summary,
           suggestion: suggestion,
           evidence: [
             for (final quote in quotes)
-              for (final id in [source, target])
+              for (final id in [source, if (!isReference) target])
                 if (sent[id]!.contains(quote))
                   ConnectionEvidence(
                     nodes[id]!,

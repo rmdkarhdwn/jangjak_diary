@@ -10,6 +10,14 @@ enum RelationType {
   final String label;
 }
 
+enum RelationBasis {
+  sharedLogs('shared_logs'),
+  explicitReference('explicit_reference');
+
+  const RelationBasis(this.apiValue);
+  final String apiValue;
+}
+
 class ConnectionEvidence {
   const ConnectionEvidence(this.interest, this.entry);
   final Interest interest;
@@ -24,6 +32,7 @@ class InterestConnection {
     required this.themes,
     required this.evidence,
     this.type,
+    this.basis = RelationBasis.sharedLogs,
     this.summary,
     this.suggestion,
   });
@@ -33,6 +42,7 @@ class InterestConnection {
   final List<String> themes;
   final List<ConnectionEvidence> evidence;
   final RelationType? type;
+  final RelationBasis basis;
   final String? summary;
   final String? suggestion;
   String get id => '${left.id}::${right.id}';

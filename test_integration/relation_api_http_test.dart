@@ -64,4 +64,24 @@ void main() {
     final map = await api.analyze(input('Flutter').take(1).toList());
     expect(map.connections, isEmpty);
   });
+  test(
+    'a recordless target connects through source-only topic evidence over actual HTTP',
+    () async {
+      const text = '오늘 기타를 치는 책을 읽었다. 여러가지 주법이 있는게 신기했다.';
+      final map = await api.analyze([
+        Interest(
+          id: 'books',
+          title: '책 읽기',
+          heatUpdatedAt: now,
+          entries: [DiaryEntry(text: text, createdAt: now)],
+        ),
+        Interest(id: 'guitar', title: '기타 치기', heatUpdatedAt: now),
+      ]);
+      final edge = map.connections.single;
+      expect(edge.strength, 0.95);
+      expect(edge.right.id, 'guitar');
+      expect(edge.evidence.single.interest.id, 'books');
+      expect(edge.evidence.single.entry.text, text);
+    },
+  );
 }
