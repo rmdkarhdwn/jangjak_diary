@@ -36,7 +36,40 @@ void main() {
     await tester.tap(find.text('불 피우기'));
     await tester.pumpAndSettle();
     expect(find.text('사진 찍기'), findsOneWidget);
+    expect(find.text('0단계 · 재'), findsOneWidget);
+    expect(find.text('다음 단계까지 장작 1개'), findsOneWidget);
   });
+
+  testWidgets(
+    'home shows remaining logs until the third log raises level two',
+    (tester) async {
+      String? saved;
+      final now = DateTime.utc(2026, 10, 26, 12);
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+        now: () => now,
+      );
+      await store.save([
+        Interest(id: 'test', title: '기타 연습', heatUpdatedAt: now),
+      ]);
+      await openDiary(tester, store: store);
+      const levels = [1, 1, 2];
+      const remaining = [2, 1, 2];
+      for (var i = 0; i < 3; i++) {
+        await tester.tap(find.text('장작 넣기'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), '연습 ${i + 1}');
+        await tester.pump();
+        await tester.tap(find.text('마음 남기기'));
+        await tester.pumpAndSettle();
+        final label = FireLevel.values[levels[i]].label;
+        expect(find.text('${levels[i]}단계 · $label'), findsOneWidget);
+        expect(find.text('다음 단계까지 장작 ${remaining[i]}개'), findsOneWidget);
+      }
+      expect((await store.load()).single.entries, hasLength(3));
+    },
+  );
 
   testWidgets(
     'archiving preserves records and a transfer reason until rekindled',
@@ -531,14 +564,20 @@ void main() {
   ) async {
     var now = DateTime.utc(2026, 10, 1, 12);
     String? saved;
-    await openDiary(
-      tester,
-      store: DiaryStore(
-        read: () async => saved,
-        write: (value) async => saved = value,
-        now: () => now,
-      ),
+    final store = DiaryStore(
+      read: () async => saved,
+      write: (value) async => saved = value,
+      now: () => now,
     );
+    await store.save([
+      Interest(
+        id: 'guitar',
+        title: '기타 치기',
+        level: FireLevel.smallFire,
+        heatUpdatedAt: now,
+      ),
+    ]);
+    await openDiary(tester, store: store);
     expect(find.text('3단계 · 작은 불'), findsOneWidget);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     now = now.add(const Duration(days: 3));

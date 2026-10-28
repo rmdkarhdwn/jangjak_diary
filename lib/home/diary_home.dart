@@ -425,6 +425,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
   Widget _heading(double scale, {bool compact = false}) {
     final title = _current?.title ?? '새로운 불';
     final level = _current?.levelAt(_now);
+    final remainingLogs = _current?.logsUntilNextLevelAt(_now);
     final status = _current == null
         ? '마음이 가는 것을 찾아보세요'
         : '${level!.index}단계 · ${level.label}';
@@ -477,6 +478,20 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
                 height: 18 / 11,
               ),
             ),
+          if (remainingLogs != null) ...[
+            SizedBox(height: 4 * scale),
+            Text(
+              remainingLogs == 0
+                  ? '최고 단계에 도달했어요'
+                  : '다음 단계까지 장작 $remainingLogs개',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: DiaryTheme.cream.withValues(alpha: .72),
+                fontSize: 11 * scale,
+                height: 18 / 11,
+              ),
+            ),
+          ],
         ],
       ),
     );

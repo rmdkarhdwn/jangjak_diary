@@ -3,16 +3,20 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum FireLevel {
-  ash('재', '잠시 쉬어가는 중'),
-  faintEmber('작은 불씨', '거의 꺼진 상태'),
-  revivedEmber('살아난 불씨', '관심이 다시 생김'),
-  smallFire('작은 불', '꾸준히 생각나는 상태'),
-  largeFire('큰 불', '현재 꽤 몰입 중'),
-  blazing('활활 타는 불', '최상위 관심 상태');
+  ash('재', '잠시 쉬어가는 중', 0),
+  faintEmber('작은 불씨', '거의 꺼진 상태', 1),
+  revivedEmber('살아난 불씨', '관심이 다시 생김', 3),
+  smallFire('작은 불', '꾸준히 생각나는 상태', 5),
+  largeFire('큰 불', '현재 꽤 몰입 중', 7),
+  blazing('활활 타는 불', '최상위 관심 상태', 9);
 
-  const FireLevel(this.label, this.description);
+  const FireLevel(this.label, this.description, this.requiredLogs);
   final String label;
   final String description;
+  final int requiredLogs;
+
+  int get logsForNextLevel =>
+      this == blazing ? 0 : values[index + 1].requiredLogs - requiredLogs;
 }
 
 enum ArchiveReason {
@@ -85,7 +89,8 @@ class Interest {
     required this.id,
     required this.title,
     required this.heatUpdatedAt,
-    this.level = FireLevel.faintEmber,
+    this.level = FireLevel.ash,
+    this.growthProgress = 0,
     this.entries = const [],
     this.events = const [],
   });
@@ -95,6 +100,8 @@ class Interest {
   final String title;
   // Level at heatUpdatedAt; elapsed cooling is calculated without mutating it.
   final FireLevel level;
+  // Logs earned toward the next level since this snapshot. Cooling resets them.
+  final int growthProgress;
   final DateTime heatUpdatedAt;
   final List<DiaryEntry> entries;
   final List<FireEvent> events;
@@ -116,6 +123,7 @@ class Interest {
       title: title,
       heatUpdatedAt: heatUpdatedAt,
       level: level,
+      growthProgress: growthProgress,
       entries: entries,
       events: [
         ...events,
@@ -153,12 +161,28 @@ class Interest {
     return FireLevel.values[cooled < 0 ? 0 : cooled];
   }
 
+  int growthProgressAt(DateTime now) =>
+      !isArchived && levelAt(now) == level ? growthProgress : 0;
+
+  int logsUntilNextLevelAt(DateTime now) =>
+      isArchived ? 0 : levelAt(now).logsForNextLevel - growthProgressAt(now);
+
   Interest withEntry(DiaryEntry entry) {
     if (isArchived) throw StateError('다시 불붙인 뒤 장작을 넣을 수 있어요.');
+    var nextLevel = levelAt(entry.createdAt);
+    var nextProgress = growthProgressAt(entry.createdAt);
+    if (nextLevel != FireLevel.blazing) {
+      nextProgress++;
+      if (nextProgress >= nextLevel.logsForNextLevel) {
+        nextLevel = FireLevel.values[nextLevel.index + 1];
+        nextProgress = 0;
+      }
+    }
     return Interest(
       id: id,
       title: title,
-      level: FireLevel.values[(levelAt(entry.createdAt).index + 1).clamp(0, 5)],
+      level: nextLevel,
+      growthProgress: nextProgress,
       heatUpdatedAt: entry.createdAt,
       entries: [entry, ...entries],
       events: events,
@@ -169,6 +193,7 @@ class Interest {
     'id': id,
     'title': title,
     'level': level.index,
+    'growthProgress': growthProgress,
     'heatUpdatedAt': heatUpdatedAt.toUtc().toIso8601String(),
     'entries': entries.map((entry) => entry.toJson()).toList(),
     'events': events.map((event) => event.toJson()).toList(),
@@ -207,10 +232,18 @@ class Interest {
       level = FireLevel.values[value];
       anchor = DateTime.parse(json['heatUpdatedAt'] as String);
     }
+    final progress = json['growthProgress'] ?? 0;
+    final progressLimit = level.logsForNextLevel;
+    if (progress is! int ||
+        progress < 0 ||
+        (progressLimit == 0 ? progress != 0 : progress >= progressLimit)) {
+      throw const FormatException('잘못된 장작 진행도입니다.');
+    }
     return Interest(
       id: json['id'] as String,
       title: title,
       level: level,
+      growthProgress: progress,
       heatUpdatedAt: anchor,
       entries: entries,
       events: (json['events'] as List<dynamic>? ?? [])
@@ -249,12 +282,7 @@ class DiaryStore {
     if (raw == null) {
       final initial = [
         Interest(id: 'books', title: '책 읽기', heatUpdatedAt: timestamp),
-        Interest(
-          id: 'guitar',
-          title: '기타 치기',
-          level: FireLevel.smallFire,
-          heatUpdatedAt: timestamp,
-        ),
+        Interest(id: 'guitar', title: '기타 치기', heatUpdatedAt: timestamp),
         Interest(id: 'running', title: '달리기', heatUpdatedAt: timestamp),
       ];
       // Save the first anchor once; reopening must not reset the cooling clock.
@@ -263,7 +291,7 @@ class DiaryStore {
     }
     final decoded = jsonDecode(raw) as Map<String, dynamic>;
     final version = decoded['version'];
-    if (version != 1 && version != 2 && version != 3) {
+    if (version != 1 && version != 2 && version != 3 && version != 4) {
       throw const FormatException('지원하지 않는 기록 형식입니다.');
     }
     final interests = (decoded['interests'] as List<dynamic>)
@@ -278,13 +306,13 @@ class DiaryStore {
     if (interests.isEmpty && version == 1) {
       throw const FormatException('관심사를 불러오지 못했습니다.');
     }
-    if (version != 3) await save(interests);
+    if (version != 4) await save(interests);
     return interests;
   }
 
   Future<void> save(List<Interest> interests) => _write(
     jsonEncode({
-      'version': 3,
+      'version': 4,
       'interests': interests.map((interest) => interest.toJson()).toList(),
     }),
   );

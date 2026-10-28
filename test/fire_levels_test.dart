@@ -12,6 +12,30 @@ void main() {
     heatUpdatedAt: start,
   );
 
+  test('new interests need their first log to reach level one', () {
+    final interest = Interest(id: 'new', title: '새 관심사', heatUpdatedAt: start);
+    expect(interest.levelAt(start), FireLevel.ash);
+    expect(
+      interest.withEntry(DiaryEntry(text: '첫 장작', createdAt: start)).level,
+      FireLevel.faintEmber,
+    );
+  });
+
+  test('cumulative logs reach levels at 1, 3, 5, 7 and 9', () {
+    var interest = fire(FireLevel.ash);
+    const expectedLevels = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5];
+    for (var i = 0; i < expectedLevels.length; i++) {
+      interest = interest.withEntry(
+        DiaryEntry(text: '장작 ${i + 1}', createdAt: start),
+      );
+      expect(interest.level.index, expectedLevels[i], reason: '${i + 1} logs');
+      expect(
+        interest.logsUntilNextLevelAt(start),
+        const [2, 1, 2, 1, 2, 1, 2, 1, 0, 0, 0][i],
+      );
+    }
+  });
+
   test('cooling happens at each exact 72-hour boundary and stops at ashes', () {
     final interest = fire(FireLevel.blazing);
     expect(
@@ -42,9 +66,12 @@ void main() {
 
   test('a log grows the cooled state and starts a fresh cooling interval', () {
     final now = start.add(const Duration(days: 10));
-    final updated = fire(
+    var updated = fire(
       FireLevel.largeFire,
     ).withEntry(DiaryEntry(text: '다시 연습했어요', createdAt: now));
+    expect(updated.level, FireLevel.faintEmber);
+    expect(updated.logsUntilNextLevelAt(now), 1);
+    updated = updated.withEntry(DiaryEntry(text: '한 번 더 연습', createdAt: now));
     expect(updated.level, FireLevel.revivedEmber);
     expect(
       updated.levelAt(now.add(const Duration(hours: 71))),
@@ -54,6 +81,97 @@ void main() {
       updated.levelAt(now.add(const Duration(days: 3))),
       FireLevel.faintEmber,
     );
+  });
+
+  test('cooling drops a level and clears unfinished growth progress', () {
+    var interest = fire(FireLevel.ash);
+    for (var i = 0; i < 4; i++) {
+      interest = interest.withEntry(
+        DiaryEntry(text: '장작 $i', createdAt: start),
+      );
+    }
+    expect(interest.level, FireLevel.revivedEmber);
+    expect(interest.logsUntilNextLevelAt(start), 1);
+    final later = start.add(const Duration(days: 3));
+    expect(interest.levelAt(later), FireLevel.faintEmber);
+    expect(interest.logsUntilNextLevelAt(later), 2);
+    final updated = interest.withEntry(
+      DiaryEntry(text: '다시 쌓기', createdAt: later),
+    );
+    expect(updated.level, FireLevel.faintEmber);
+    expect(updated.logsUntilNextLevelAt(later), 1);
+    expect(updated.entries, hasLength(5));
+  });
+
+  test(
+    'reopening halfway to a level preserves progress and the cooling clock',
+    () async {
+      String? saved;
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+        now: () => start,
+      );
+      var interest = fire(FireLevel.ash);
+      for (var i = 0; i < 2; i++) {
+        interest = interest.withEntry(
+          DiaryEntry(text: '장작 $i', createdAt: start),
+        );
+      }
+      await store.save([interest]);
+      final restored = (await store.load()).single;
+      expect(jsonDecode(saved!)['version'], 4);
+      expect(restored.heatUpdatedAt, start);
+      expect(restored.level, FireLevel.faintEmber);
+      expect(restored.logsUntilNextLevelAt(start), 1);
+      expect(
+        restored.withEntry(DiaryEntry(text: '세 번째 장작', createdAt: start)).level,
+        FireLevel.revivedEmber,
+      );
+    },
+  );
+
+  test(
+    'version-three migration preserves the snapshot, records and lifecycle once',
+    () async {
+      final old = fire(FireLevel.smallFire)
+          .withEntry(DiaryEntry(text: '기존 기록', createdAt: start))
+          .archive(start, reason: ArchiveReason.transitioned, note: '관심이 이어짐');
+      final oldJson = Map<String, Object>.of(old.toJson())
+        ..remove('growthProgress');
+      String? saved = jsonEncode({
+        'version': 3,
+        'interests': [oldJson],
+      });
+      var writes = 0;
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async {
+          saved = value;
+          writes++;
+        },
+        now: () => start,
+      );
+      final restored = (await store.load()).single;
+      expect(restored.level, old.level);
+      expect(restored.heatUpdatedAt, start);
+      expect(restored.entries.single.text, '기존 기록');
+      expect(restored.isArchived, isTrue);
+      expect(restored.lastArchive!.reason, ArchiveReason.transitioned);
+      expect(restored.lastArchive!.note, '관심이 이어짐');
+      expect(restored.growthProgress, 0);
+      expect(jsonDecode(saved!)['version'], 4);
+      await store.load();
+      expect(writes, 1);
+    },
+  );
+
+  test('invalid saved growth progress is rejected', () {
+    for (final progress in [-1, 2, 0.5, '1']) {
+      final json = Map<String, Object>.of(fire(FireLevel.faintEmber).toJson())
+        ..['growthProgress'] = progress;
+      expect(() => Interest.fromJson(json, now: start), throwsFormatException);
+    }
   });
 
   test(
@@ -80,7 +198,9 @@ void main() {
         write: (value) async => saved = value,
         now: () => now,
       );
-      await open().load();
+      final initial = await open().load();
+      initial[1] = fire(FireLevel.smallFire);
+      await open().save(initial);
       now = start.add(const Duration(days: 9));
       final restored = await open().load();
       expect(restored[1].heatUpdatedAt, start);
@@ -115,7 +235,7 @@ void main() {
       expect(migrated[0].entries.single.text, '기존 장작');
       expect(migrated[0].heatUpdatedAt, start);
       expect(migrated[0].levelAt(now), FireLevel.revivedEmber);
-      expect(jsonDecode(saved!)['version'], 3);
+      expect(jsonDecode(saved!)['version'], 4);
       now = now.add(const Duration(days: 3));
       final reopened = await open().load();
       expect(reopened[1].heatUpdatedAt, start.add(const Duration(days: 3)));

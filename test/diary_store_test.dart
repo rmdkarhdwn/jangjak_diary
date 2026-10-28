@@ -14,17 +14,17 @@ void main() {
   });
 
   test(
-    'adding logs grows the fire to level five instead of resetting it',
+    'nine logs grow a new fire to level five without losing records',
     () async {
       final store = DiaryStore(read: () async => null, write: (_) async {});
       var interest = (await store.load())[1];
-      for (var i = 0; i < 4; i++) {
+      for (var i = 0; i < 9; i++) {
         interest = interest.withEntry(
           DiaryEntry(text: '연습 $i', createdAt: DateTime.now()),
         );
       }
       expect(interest.level.index, 5);
-      expect(interest.entries.length, 4);
+      expect(interest.entries.length, 9);
     },
   );
 

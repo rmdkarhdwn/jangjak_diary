@@ -20,6 +20,7 @@ void main() {
     id: id,
     title: title ?? id,
     heatUpdatedAt: now,
+    level: text.isEmpty ? FireLevel.ash : FireLevel.faintEmber,
     entries: text.isEmpty ? [] : [DiaryEntry(text: text, createdAt: now)],
   );
   final pair = [

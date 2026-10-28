@@ -36,15 +36,20 @@ void main() {
   );
 
   test('rekindling keeps the full lifecycle and starts at a small ember', () {
-    final restored = original
-        .archive(now, reason: ArchiveReason.achieved)
-        .rekindle(now.add(const Duration(days: 10)));
+    final withProgress = original.withEntry(
+      DiaryEntry(text: '진행 중인 장작', createdAt: now),
+    );
+    final archived = withProgress.archive(now, reason: ArchiveReason.achieved);
+    expect(archived.growthProgress, 1);
+    final restored = archived.rekindle(now.add(const Duration(days: 10)));
     expect(restored.isArchived, isFalse);
     expect(
       restored.levelAt(now.add(const Duration(days: 10))),
       FireLevel.faintEmber,
     );
-    expect(restored.entries.single.createdAt, now);
+    expect(restored.entries.map((entry) => entry.createdAt), [now, now]);
+    expect(restored.growthProgress, 0);
+    expect(restored.logsUntilNextLevelAt(now.add(const Duration(days: 10))), 2);
     expect(restored.events.map((event) => event.kind), [
       FireEventKind.archived,
       FireEventKind.rekindled,
@@ -79,7 +84,8 @@ void main() {
     'version two migrates as active without changing existing records',
     () async {
       final legacy = Map<String, Object>.of(original.toJson())
-        ..remove('events');
+        ..remove('events')
+        ..remove('growthProgress');
       String? saved = jsonEncode({
         'version': 2,
         'interests': [legacy],
@@ -96,7 +102,7 @@ void main() {
       expect(restored.isArchived, isFalse);
       expect(restored.events, isEmpty);
       expect(restored.entries.single.text, '앱의 리듬을 표현했다.');
-      expect(jsonDecode(saved!)['version'], 3);
+      expect(jsonDecode(saved!)['version'], 4);
       await store.load();
       expect(writes, 1);
     },
