@@ -10,16 +10,19 @@ class ArchivedFireSheet extends StatefulWidget {
     required this.interest,
     required this.onRekindle,
     required this.onDelete,
+    required this.onEditEntry,
   });
   final Interest interest;
   final Future<List<Interest>> Function(Interest) onRekindle;
   final Future<List<Interest>?> Function(Interest) onDelete;
+  final EditDiaryEntry onEditEntry;
 
   @override
   State<ArchivedFireSheet> createState() => _ArchivedFireSheetState();
 }
 
 class _ArchivedFireSheetState extends State<ArchivedFireSheet> {
+  late Interest _interest = widget.interest;
   bool _busy = false;
   bool _restoring = false;
   String? _error;
@@ -33,13 +36,30 @@ class _ArchivedFireSheetState extends State<ArchivedFireSheet> {
     });
     try {
       final updated = restore
-          ? await widget.onRekindle(widget.interest)
-          : await widget.onDelete(widget.interest);
+          ? await widget.onRekindle(_interest)
+          : await widget.onDelete(_interest);
       if (mounted && updated != null) Navigator.pop(context, updated);
     } catch (_) {
       if (mounted) {
         setState(() => _error = '변경하지 못했어요. 기록은 그대로 있으니 다시 시도해 주세요.');
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _edit(DiaryEntry entry) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await showDiaryEntryEditor(
+        context,
+        entry: entry,
+        onSave: (text) async {
+          final updated = await widget.onEditEntry(_interest.id, entry, text);
+          if (mounted) setState(() => _interest = updated);
+        },
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -54,7 +74,7 @@ class _ArchivedFireSheetState extends State<ArchivedFireSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SheetHeading(
-            title: '${widget.interest.title}의 기록',
+            title: '${_interest.title}의 기록',
             description: '꺼진 불도 과거에 실제로 타고 있었어요.\n이곳에 남은 장작은 언제든 다시 꺼내볼 수 있어요.',
           ),
           const SizedBox(height: 20),
@@ -91,14 +111,17 @@ class _ArchivedFireSheetState extends State<ArchivedFireSheet> {
             ),
           const SizedBox(height: 20),
           Text(
-            '${widget.interest.entries.length}개의 장작 · 불의 타임라인',
+            '${_interest.entries.length}개의 장작 · 불의 타임라인',
             style: TextStyle(
               color: DiaryTheme.ink.withValues(alpha: .65),
               fontSize: 12,
             ),
           ),
           const SizedBox(height: 14),
-          InterestTimeline(interest: widget.interest),
+          InterestTimeline(
+            interest: _interest,
+            onEditEntry: _busy ? null : _edit,
+          ),
         ],
       ),
     ),

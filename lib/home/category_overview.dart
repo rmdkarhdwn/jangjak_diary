@@ -10,6 +10,7 @@ import '../theme/diary_theme.dart';
 import 'animated_fireplace.dart';
 import 'home_widgets.dart';
 import 'archived_fire_sheet.dart';
+import 'diary_sheets.dart';
 
 class CategoryOverview extends StatefulWidget {
   const CategoryOverview({
@@ -19,6 +20,7 @@ class CategoryOverview extends StatefulWidget {
     required this.clock,
     required this.onManage,
     required this.onRekindle,
+    required this.onEditEntry,
   });
 
   static const createNew = '__new_interest__';
@@ -27,6 +29,7 @@ class CategoryOverview extends StatefulWidget {
   final DateTime Function() clock;
   final Future<List<Interest>?> Function(Interest) onManage;
   final Future<List<Interest>> Function(Interest) onRekindle;
+  final EditDiaryEntry onEditEntry;
 
   @override
   State<CategoryOverview> createState() => _CategoryOverviewState();
@@ -81,6 +84,15 @@ class _CategoryOverviewState extends State<CategoryOverview>
         interest: interest,
         onRekindle: widget.onRekindle,
         onDelete: widget.onManage,
+        onEditEntry: (id, entry, text) async {
+          final edited = await widget.onEditEntry(id, entry, text);
+          if (mounted) {
+            _replaceInterests(
+              _interests.map((item) => item.id == id ? edited : item).toList(),
+            );
+          }
+          return edited;
+        },
       ),
     );
     if (!mounted || updated == null) return;

@@ -5,6 +5,31 @@ import '../theme/diary_theme.dart';
 import 'home_widgets.dart';
 import 'entry_date.dart';
 
+typedef EditDiaryEntry =
+    Future<Interest> Function(String interestId, DiaryEntry entry, String text);
+
+Future<void> showDiaryEntryEditor(
+  BuildContext context, {
+  required DiaryEntry entry,
+  required Future<void> Function(String) onSave,
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  backgroundColor: Colors.transparent,
+  barrierColor: const Color(0x66333040),
+  constraints: const BoxConstraints(maxWidth: 460),
+  builder: (_) => DiaryComposer(
+    title: '장작 수정',
+    description: '오타나 잘못 적은 내용을 고쳐보세요.',
+    hint: '장작 내용을 입력해 주세요.',
+    submitLabel: '수정 저장',
+    multiline: true,
+    initialText: entry.text,
+    onSave: onSave,
+  ),
+);
+
 class DiaryComposer extends StatefulWidget {
   const DiaryComposer({
     super.key,
@@ -14,6 +39,7 @@ class DiaryComposer extends StatefulWidget {
     required this.submitLabel,
     required this.onSave,
     this.multiline = false,
+    this.initialText = '',
   });
 
   final String title;
@@ -22,13 +48,14 @@ class DiaryComposer extends StatefulWidget {
   final String submitLabel;
   final Future<void> Function(String) onSave;
   final bool multiline;
+  final String initialText;
 
   @override
   State<DiaryComposer> createState() => _DiaryComposerState();
 }
 
 class _DiaryComposerState extends State<DiaryComposer> {
-  final _text = TextEditingController();
+  late final _text = TextEditingController(text: widget.initialText);
   bool _saving = false;
   String? _error;
 
@@ -111,10 +138,36 @@ class _DiaryComposerState extends State<DiaryComposer> {
   );
 }
 
-class EntryHistory extends StatelessWidget {
-  const EntryHistory({super.key, required this.interest});
+class EntryHistory extends StatefulWidget {
+  const EntryHistory({super.key, required this.interest, this.onEditEntry});
 
   final Interest interest;
+  final EditDiaryEntry? onEditEntry;
+
+  @override
+  State<EntryHistory> createState() => _EntryHistoryState();
+}
+
+class _EntryHistoryState extends State<EntryHistory> {
+  late Interest interest = widget.interest;
+  bool _editing = false;
+
+  Future<void> _edit(DiaryEntry entry) async {
+    if (_editing || widget.onEditEntry == null) return;
+    setState(() => _editing = true);
+    try {
+      await showDiaryEntryEditor(
+        context,
+        entry: entry,
+        onSave: (text) async {
+          final updated = await widget.onEditEntry!(interest.id, entry, text);
+          if (mounted) setState(() => interest = updated);
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _editing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => SheetSurface(
@@ -169,7 +222,10 @@ class EntryHistory extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          InterestTimeline(interest: interest),
+          InterestTimeline(
+            interest: interest,
+            onEditEntry: widget.onEditEntry == null || _editing ? null : _edit,
+          ),
         ],
       ],
     ),
@@ -177,8 +233,9 @@ class EntryHistory extends StatelessWidget {
 }
 
 class InterestTimeline extends StatelessWidget {
-  const InterestTimeline({super.key, required this.interest});
+  const InterestTimeline({super.key, required this.interest, this.onEditEntry});
   final Interest interest;
+  final ValueChanged<DiaryEntry>? onEditEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -205,12 +262,33 @@ class InterestTimeline extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  entryDateLabel(item.at),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: DiaryTheme.ink.withValues(alpha: .6),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entryDateLabel(item.at),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: DiaryTheme.ink.withValues(alpha: .6),
+                        ),
+                      ),
+                    ),
+                    if (item.entry != null && onEditEntry != null)
+                      Tooltip(
+                        message: '장작 수정',
+                        child: TextButton.icon(
+                          onPressed: () => onEditEntry!(item.entry!),
+                          style: TextButton.styleFrom(
+                            foregroundColor: DiaryTheme.ink.withValues(
+                              alpha: .7,
+                            ),
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                          icon: const Icon(Icons.edit_outlined, size: 15),
+                          label: const Text('수정'),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 if (item.entry != null)

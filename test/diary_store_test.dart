@@ -66,4 +66,109 @@ void main() {
       await expectLater(store.load(), throwsFormatException);
     },
   );
+
+  test(
+    'editing a record survives reopening without adding heat, logs or changing dates',
+    () async {
+      final firstAt = DateTime.utc(2026, 10, 1);
+      final lastAt = firstAt.add(const Duration(hours: 1));
+      final interest =
+          Interest(id: 'guitar', title: '기타 치기', heatUpdatedAt: firstAt)
+              .withEntry(DiaryEntry(text: '기타 주법이 신기햇다', createdAt: firstAt))
+              .withEntry(DiaryEntry(text: '코드를 연습했다', createdAt: lastAt));
+      final edited = interest.withEditedEntry(
+        interest.entries.last,
+        '기타 주법이 신기했다',
+      );
+      String? saved;
+      final store = DiaryStore(
+        read: () async => saved,
+        write: (value) async => saved = value,
+      );
+      await store.save([edited]);
+      final restored = (await store.load()).single;
+      expect(restored.entries.map((entry) => entry.text), [
+        '코드를 연습했다',
+        '기타 주법이 신기했다',
+      ]);
+      expect(restored.entries.map((entry) => entry.createdAt), [
+        lastAt,
+        firstAt,
+      ]);
+      expect(restored.level, interest.level);
+      expect(restored.growthProgress, interest.growthProgress);
+      expect(restored.heatUpdatedAt, lastAt);
+      final later = lastAt.add(const Duration(days: 3));
+      expect(restored.levelAt(later), interest.levelAt(later));
+      expect(
+        restored.logsUntilNextLevelAt(later),
+        interest.logsUntilNextLevelAt(later),
+      );
+    },
+  );
+
+  test(
+    'editing selects exactly one record even when text and dates are identical',
+    () {
+      final at = DateTime.utc(2026, 10, 1);
+      final first = DiaryEntry(text: '똑같은 장작', createdAt: at);
+      final second = DiaryEntry(text: '똑같은 장작', createdAt: at);
+      final interest = Interest(
+        id: 'books',
+        title: '책 읽기',
+        heatUpdatedAt: at,
+        entries: [first, second],
+      );
+      final edited = interest.withEditedEntry(second, '두 번째 장작 수정');
+      expect(edited.entries.map((entry) => entry.text), [
+        '똑같은 장작',
+        '두 번째 장작 수정',
+      ]);
+      expect(interest.entries.last.text, '똑같은 장작');
+      expect(
+        () => edited.withEditedEntry(second, '오래된 편집'),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
+    'editing an archived record preserves the archive and its lifecycle',
+    () {
+      final at = DateTime.utc(2026, 10, 1);
+      final interest = Interest(id: 'books', title: '책 읽기', heatUpdatedAt: at)
+          .withEntry(DiaryEntry(text: '옛날 기럭', createdAt: at))
+          .archive(
+            at.add(const Duration(days: 1)),
+            reason: ArchiveReason.achieved,
+            note: '완독',
+          );
+      final edited = interest.withEditedEntry(interest.entries.single, '옛날 기록');
+      expect(edited.isArchived, isTrue);
+      expect(edited.events, same(interest.events));
+      expect(edited.lastArchive!.note, '완독');
+      expect(edited.heatUpdatedAt, interest.heatUpdatedAt);
+      expect(edited.level, interest.level);
+      expect(edited.growthProgress, interest.growthProgress);
+    },
+  );
+
+  test(
+    'blank and overlong edits are rejected without changing the original record',
+    () {
+      final at = DateTime.utc(2026, 10, 1);
+      final interest = Interest(
+        id: 'books',
+        title: '책 읽기',
+        heatUpdatedAt: at,
+      ).withEntry(DiaryEntry(text: '원래 기록', createdAt: at));
+      for (final text in [' \n ', 'a' * 2001]) {
+        expect(
+          () => interest.withEditedEntry(interest.entries.single, text),
+          throwsFormatException,
+        );
+      }
+      expect(interest.entries.single.text, '원래 기록');
+    },
+  );
 }

@@ -189,6 +189,30 @@ class Interest {
     );
   }
 
+  Interest withEditedEntry(DiaryEntry original, String text) {
+    final value = text.trim();
+    if (value.isEmpty || value.length > 2000) {
+      throw const FormatException('장작 내용은 1~2,000자로 입력해 주세요.');
+    }
+    // Different records may have the same text and timestamp. Edit only the
+    // selected instance, and reject stale editors instead of changing a match.
+    final index = entries.indexWhere((entry) => identical(entry, original));
+    if (index < 0) {
+      throw const FormatException('수정할 장작을 찾지 못했어요. 기록을 다시 열어 주세요.');
+    }
+    final updated = List<DiaryEntry>.of(entries);
+    updated[index] = DiaryEntry(text: value, createdAt: original.createdAt);
+    return Interest(
+      id: id,
+      title: title,
+      level: level,
+      growthProgress: growthProgress,
+      heatUpdatedAt: heatUpdatedAt,
+      entries: updated,
+      events: events,
+    );
+  }
+
   Map<String, Object> toJson() => {
     'id': id,
     'title': title,

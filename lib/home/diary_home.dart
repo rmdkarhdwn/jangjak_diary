@@ -175,8 +175,28 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
   Future<void> _history() async {
     final current = _current;
     if (current == null) return;
-    final addEntry = await _sheet<bool>(EntryHistory(interest: current));
+    final addEntry = await _sheet<bool>(
+      EntryHistory(interest: current, onEditEntry: _editEntry),
+    );
     if (addEntry == true && mounted) await _addEntry();
+  }
+
+  Future<Interest> _editEntry(
+    String id,
+    DiaryEntry original,
+    String text,
+  ) async {
+    final matches = _allInterests!.where((item) => item.id == id);
+    if (matches.isEmpty) {
+      throw const FormatException('수정할 모닥불을 찾지 못했어요.');
+    }
+    final edited = matches.first.withEditedEntry(original, text);
+    final updated = _allInterests!
+        .map((item) => item.id == id ? edited : item)
+        .toList();
+    await widget.store.save(updated);
+    if (mounted) setState(() => _allInterests = updated);
+    return edited;
   }
 
   Future<void> _saveMutation(List<Interest> updated, {String? selectId}) async {
@@ -286,6 +306,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
             interest: matches.first,
             onRekindle: _rekindle,
             onDelete: _manageInterest,
+            onEditEntry: _editEntry,
           ),
         );
       }
@@ -311,6 +332,7 @@ class _DiaryHomeState extends State<DiaryHome> with WidgetsBindingObserver {
             clock: () => widget.store.now,
             onManage: _manageInterest,
             onRekindle: _rekindle,
+            onEditEntry: _editEntry,
           ),
           transitionsBuilder: (_, animation, secondaryAnimation, child) =>
               SlideTransition(
