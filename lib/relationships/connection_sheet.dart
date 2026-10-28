@@ -42,7 +42,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
         .suggestionsFor(_current)
         .where((item) => item.id != _current.id)
         .toList();
-    const soft = Color(0xFFBAB3C3);
+    const soft = Color(0xFFCEC7D4);
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * .88,
@@ -83,27 +83,35 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                     ),
                   Icon(
                     Icons.auto_awesome_rounded,
-                    size: 16,
+                    size: 20,
                     color: const Color(0xFFE4B989).withValues(alpha: .9),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       widget.map.isExample ? '예시 기록에서 찾은 연결' : 'AI가 기록에서 찾은 연결',
-                      style: const TextStyle(color: soft, fontSize: 11),
+                      style: const TextStyle(
+                        color: soft,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                   IconButton(
                     tooltip: '닫기',
                     onPressed: () => Navigator.pop(context),
                     color: soft,
-                    icon: const Icon(Icons.close_rounded, size: 20),
+                    icon: const Icon(Icons.close_rounded, size: 22),
                   ),
                 ],
               ),
               Text(
                 _current.themes.first,
-                style: DiaryTheme.title.copyWith(fontSize: 24),
+                style: DiaryTheme.title.copyWith(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -143,13 +151,16 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                     color: const Color(0xFFE3B98F),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    _current.type == null
-                        ? _current.closeness
-                        : '밀접도 ${_current.strength}',
-                    style: const TextStyle(
-                      color: Color(0xFFE3B98F),
-                      fontSize: 11,
+                  Flexible(
+                    child: Text(
+                      _current.type == null
+                          ? _current.closeness
+                          : '밀접도 ${_current.strength}',
+                      style: const TextStyle(
+                        color: Color(0xFFE3B98F),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -159,8 +170,9 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                 _current.explanation,
                 style: const TextStyle(
                   color: DiaryTheme.cream,
-                  fontSize: 13,
-                  height: 1.9,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  height: 1.75,
                 ),
               ),
               for (final interest in [
@@ -183,7 +195,8 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                           '${interest.title} · 보관한 불',
                           style: const TextStyle(
                             color: Color(0xFFE3C09C),
-                            fontSize: 11,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -192,7 +205,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                               '이유를 남기지 않고 보관했어요.',
                           style: const TextStyle(
                             color: soft,
-                            fontSize: 11,
+                            fontSize: 14,
                             height: 1.7,
                           ),
                         ),
@@ -201,7 +214,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                             interest.lastArchive!.note!,
                             style: const TextStyle(
                               color: DiaryTheme.cream,
-                              fontSize: 12,
+                              fontSize: 16,
                               height: 1.8,
                             ),
                           ),
@@ -218,10 +231,10 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .035),
+                    color: Colors.white.withValues(alpha: .065),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: .07),
+                      color: Colors.white.withValues(alpha: .12),
                     ),
                   ),
                   child: Column(
@@ -234,7 +247,8 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                               evidence.interest.title,
                               style: const TextStyle(
                                 color: Color(0xFFE3C09C),
-                                fontSize: 11,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -243,18 +257,20 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                               onPressed: () =>
                                   Navigator.pop(context, evidence.interest.id),
                               style: TextButton.styleFrom(
-                                foregroundColor: soft,
+                                foregroundColor: const Color(0xFFE3C09C),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                minimumSize: const Size(0, 32),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                minimumSize: const Size(0, 44),
                               ),
                               child: Text(
                                 evidence.interest.isArchived
                                     ? '기록 보기 ↗'
                                     : '이 불로 가기 ↗',
-                                style: const TextStyle(fontSize: 10),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                         ],
@@ -264,17 +280,14 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                         evidence.entry.text,
                         style: const TextStyle(
                           color: DiaryTheme.cream,
-                          fontSize: 12,
-                          height: 1.85,
+                          fontSize: 16,
+                          height: 1.75,
                         ),
                       ),
                       const SizedBox(height: 10),
                       Text(
                         entryDateLabel(evidence.entry.createdAt),
-                        style: TextStyle(
-                          color: soft.withValues(alpha: .65),
-                          fontSize: 10,
-                        ),
+                        style: const TextStyle(color: soft, fontSize: 12),
                       ),
                     ],
                   ),
@@ -290,7 +303,12 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                     (suggestions.isEmpty
                         ? '새로운 공통점이 담긴 기록이 쌓이면, 다른 연결도 함께 살펴볼 수 있어요.'
                         : '이 두 불에서 조금 더 뻗어 나가 볼까요? 아직 펼치지 않은 공통점이에요.'),
-                style: const TextStyle(color: soft, fontSize: 11, height: 1.8),
+                style: const TextStyle(
+                  color: DiaryTheme.cream,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  height: 1.75,
+                ),
               ),
               const SizedBox(height: 12),
               for (final suggestion in suggestions)
@@ -323,7 +341,8 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                                     suggestion.label,
                                     style: const TextStyle(
                                       color: DiaryTheme.cream,
-                                      fontSize: 12,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -331,7 +350,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                                     suggestion.themes.first,
                                     style: const TextStyle(
                                       color: soft,
-                                      fontSize: 10,
+                                      fontSize: 13,
                                     ),
                                   ),
                                 ],
@@ -353,11 +372,7 @@ class _ConnectionSheetState extends State<ConnectionSheet> {
                 widget.map.isExample
                     ? '이 화면의 관심사와 기록은 기능을 살펴보기 위한 예시입니다.'
                     : 'AI가 장작 원문을 바탕으로 제안한 연결이에요. 밀접도는 서버의 계산값이며 확률이나 확정적인 판단이 아니에요.',
-                style: TextStyle(
-                  color: soft.withValues(alpha: .65),
-                  fontSize: 10,
-                  height: 1.8,
-                ),
+                style: const TextStyle(color: soft, fontSize: 12, height: 1.8),
               ),
             ],
           ),
@@ -372,14 +387,19 @@ class _NamePill extends StatelessWidget {
   final String name;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
-      border: Border.all(color: const Color(0x33E3B98F)),
+      color: const Color(0x14E3B98F),
+      border: Border.all(color: const Color(0x66E3B98F)),
       borderRadius: BorderRadius.circular(24),
     ),
     child: Text(
       name,
-      style: const TextStyle(color: DiaryTheme.cream, fontSize: 11),
+      style: const TextStyle(
+        color: DiaryTheme.cream,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
     ),
   );
 }
@@ -391,14 +411,16 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Icon(icon, color: const Color(0xFFE3C09C), size: 16),
+      Icon(icon, color: const Color(0xFFE3C09C), size: 20),
       const SizedBox(width: 8),
-      Text(
-        title,
-        style: const TextStyle(
-          color: DiaryTheme.cream,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
+      Expanded(
+        child: Text(
+          title,
+          style: const TextStyle(
+            color: DiaryTheme.cream,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     ],
